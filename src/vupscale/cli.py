@@ -321,6 +321,7 @@ def bench(
         frames = rng.integers(0, 256, (cfg.batch_size, height, width, 3), dtype=np.uint8)
         with console.status("measuring..."):
             controller.run(engine.process_batch, frames)  # warm-up (cuDNN autotune, compile)
+            engine.timings = {}
             done, start = 0, time.perf_counter()
             while done == 0 or time.perf_counter() - start < seconds:
                 controller.run(engine.process_batch, frames)
@@ -350,6 +351,22 @@ def bench(
         table.add_row("vram peak", f"{peak:.1f} GB of {cfg.vram_total_gb:.1f} GB")
     table.add_section()
     table.add_row("speed", f"[bold green]{done / elapsed:.2f} fps[/bold green] (inference only)")
+    labels = {
+        "upload": "upload (RAM -> GPU)",
+        "model": "model",
+        "convert": "convert to uint8 (GPU)",
+        "download": "download (GPU -> RAM)",
+        "host copy": "host copy (RAM)",
+    }
+    timings = engine.timings or {}
+    measured = sum(timings.values()) or 1.0
+    table.add_section()
+    for stage, label in labels.items():
+        if stage in timings:
+            spent = timings[stage]
+            table.add_row(
+                label, f"{1000 * spent / done:8.1f} ms/frame  {100 * spent / measured:5.1f}%"
+            )
     console.print(table)
     for note in (*cfg.notes, *engine.notes, *controller.events):
         console.print(f"[yellow]note:[/yellow] {note}")

@@ -123,4 +123,5 @@ def test_bench_runs_the_real_engine_on_cpu(tiny_model: Path):
     out = plain(result)
     assert result.exit_code == 0, out
     assert "96x64 -> 192x128" in out and "fps" in out and "fp32" in out
+    assert "ms/frame" in out and "model" in out and "upload" in out
     assert runner.invoke(app, ["bench", "-m", str(tiny_model), "--size", "big"]).exit_code == 2

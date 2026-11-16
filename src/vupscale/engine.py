@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -118,6 +119,9 @@ class UpscaleEngine:
         self.tile_overlap = tile_overlap
         self.out_size = out_size
         self.notes: list[str] = []
+        # Set to a dict to collect seconds per stage (used by `vupscale bench`). Profiling
+        # synchronises the GPU between stages, so leave it off for real renders.
+        self.timings: dict[str, float] | None = None
 
         descriptor.eval()
         descriptor.to(self.device, dtype)
@@ -150,6 +154,15 @@ class UpscaleEngine:
         self._compiled = None
         self._fixed_units = 0
         self.notes.append(f"torch.compile unavailable, running eager ({type(exc).__name__})")
+
+    def _mark(self, stage: str, since: float) -> float:
+        if self.timings is None:
+            return since
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+        now = time.perf_counter()
+        self.timings[stage] = self.timings.get(stage, 0.0) + now - since
+        return now
 
     # ------------------------------------------------------------------ model calls
 
@@ -235,20 +248,20 @@ class UpscaleEngine:
         staged.copy_(torch.from_numpy(frames))
         return staged.to(self.device, non_blocking=True)
 
-    def _download(self, y: torch.Tensor) -> np.ndarray:
+    def _download(self, y: torch.Tensor) -> torch.Tensor:
+        """Device -> host into the reused pinned buffer (a view of it is returned)."""
         if self.device.type != "cuda":
-            return y.numpy()
+            return y
         if (
             self._pinned_out is None
             or self._pinned_out.shape[1:] != y.shape[1:]
-            or (self._pinned_out.shape[0] < y.shape[0])
+            or self._pinned_out.shape[0] < y.shape[0]
         ):
             self._pinned_out = torch.empty(y.shape, dtype=torch.uint8).pin_memory()
         staged = self._pinned_out[: y.shape[0]]
         staged.copy_(y, non_blocking=True)
         torch.cuda.synchronize(self.device)
-        # Copy out of the reused pinned buffer: the caller may queue this for the encoder.
-        return staged.numpy().copy()
+        return staged
 
     # ------------------------------------------------------------------ public API
 
@@ -261,15 +274,18 @@ class UpscaleEngine:
             raise ValueError(
                 f"expected uint8 frames (B, H, W, 3), got {frames.dtype} {frames.shape}"
             )
+        clock = time.perf_counter()
         x = self._upload(np.ascontiguousarray(frames))
         x = x.permute(0, 3, 1, 2).to(self.dtype).div_(255.0)
+        clock = self._mark("upload", clock)
 
         tiled = tile_size is not None
         y = self._forward_tiled(x, tile_size, tile_batch) if tiled else self._forward(x)
         del x
+        clock = self._mark("model", clock)
+
         # Clamp before any resize so out-of-range model output cannot bleed into neighbours.
         y = y.float().clamp_(0.0, 1.0)
-
         if self.out_size is not None:
             out_w, out_h = self.out_size
             if (y.shape[-1], y.shape[-2]) != (out_w, out_h):
@@ -277,7 +293,17 @@ class UpscaleEngine:
                     y, size=(out_h, out_w), mode="bicubic", align_corners=False, antialias=True
                 )
         y = y.clamp_(0.0, 1.0).mul_(255.0).round_().to(torch.uint8)
-        return self._download(y.permute(0, 2, 3, 1).contiguous())
+        y = y.permute(0, 2, 3, 1).contiguous()
+        clock = self._mark("convert", clock)
+
+        staged = self._download(y)
+        clock = self._mark("download", clock)
+        if self.device.type != "cuda":
+            return staged.numpy()
+        # Copy out of the reused pinned buffer: the caller may queue this for the encoder.
+        out = staged.numpy().copy()
+        self._mark("host copy", clock)
+        return out
 
     def make_probe(self, frame_hw: tuple[int, int]) -> Probe:
         """Measuring function for calibration: runs the real code path on dummy frames.

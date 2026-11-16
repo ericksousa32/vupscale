@@ -200,3 +200,13 @@ def test_tiles_are_sized_to_divide_the_frame_evenly():
         assert len(starts) * size <= length + len(starts) * 32 + len(starts)
     computed = 2 * 3 * fit_tile(1080, 768, 32) * fit_tile(1920, 768, 32)
     assert computed / (1080 * 1920) < 1.1  # was 1.71 with fixed 768 px tiles
+
+
+def test_stage_timings_are_collected_only_when_enabled(descriptor, frames):
+    engine = UpscaleEngine(descriptor)
+    engine.process_batch(frames)
+    assert engine.timings is None
+    engine.timings = {}
+    engine.process_batch(frames)
+    assert {"upload", "model", "convert", "download"} <= set(engine.timings)
+    assert all(v >= 0 for v in engine.timings.values()) and engine.timings["model"] > 0
