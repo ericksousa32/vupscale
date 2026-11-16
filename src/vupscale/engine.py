@@ -64,6 +64,21 @@ def tile_starts(length: int, tile: int, overlap: int) -> list[int]:
     return starts
 
 
+def fit_tile(length: int, tile: int, overlap: int, multiple: int = 1) -> int:
+    """Shrink ``tile`` so the tiles needed to cover ``length`` divide it evenly.
+
+    ``tile`` is the largest size that fits in memory. Using it as-is can waste a lot: a
+    1080p frame in 768 px tiles computes 70% more pixels than it has. The same number of
+    tiles, sized evenly (662x556), wastes about 7%.
+    """
+    if length <= tile:
+        return length
+    count = math.ceil((length - overlap) / max(1, tile - overlap))
+    size = math.ceil((length + (count - 1) * overlap) / count)
+    size = math.ceil(size / multiple) * multiple  # avoid padding inside the model call
+    return min(size, tile)
+
+
 def blend_ramp(length: int, overlap: int, fade_start: bool, fade_end: bool) -> torch.Tensor:
     """1D blending weights: 1 in the middle, a raised-cosine fade on edges shared with a
     neighbour. The fade is close to zero right at the tile border, where the model has the
@@ -176,7 +191,9 @@ class UpscaleEngine:
         """Upscale in overlapping tiles, several tiles per model call, blended seamlessly."""
         b, c, h, w = x.shape
         s = self.scale
-        th, tw = min(tile, h), min(tile, w)
+        multiple = self.descriptor.size_requirements.multiple_of
+        th = fit_tile(h, tile, self.tile_overlap, multiple)
+        tw = fit_tile(w, tile, self.tile_overlap, multiple)
         ys, xs = tile_starts(h, th, self.tile_overlap), tile_starts(w, tw, self.tile_overlap)
         if len(ys) == 1 and len(xs) == 1:
             return self._forward(x)

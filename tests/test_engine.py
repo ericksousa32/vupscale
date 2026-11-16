@@ -10,7 +10,14 @@ import pytest
 import torch
 
 from vupscale.config import UpscaleOptions
-from vupscale.engine import UpscaleEngine, blend_ramp, create_engine, load_model, tile_starts
+from vupscale.engine import (
+    UpscaleEngine,
+    blend_ramp,
+    create_engine,
+    fit_tile,
+    load_model,
+    tile_starts,
+)
 from vupscale.models import ModelError
 from vupscale.tuning import AdaptiveBatchController
 
@@ -178,3 +185,18 @@ def test_engine_recovers_from_oom_through_the_controller(descriptor, frames, mon
     out = controller.run(engine.process_batch, frames)
     assert controller.batch_size == 1 and len(controller.events) == 1
     assert np.array_equal(out, expected)
+
+
+def test_tiles_are_sized_to_divide_the_frame_evenly():
+    assert fit_tile(1080, 768, 32) == 556 and fit_tile(1920, 768, 32) == 662
+    assert fit_tile(1080, 768, 32, multiple=16) == 560
+    assert fit_tile(500, 768, 32) == 500  # fits whole
+    for length, tile in [(1080, 768), (1920, 768), (2160, 512), (3840, 512), (721, 256)]:
+        size = fit_tile(length, tile, 32)
+        starts = tile_starts(length, size, 32)
+        assert size <= tile and starts[-1] + size == length
+        # Never more tiles than the full-size tile would need, and little overshoot.
+        assert len(starts) == len(tile_starts(length, tile, 32))
+        assert len(starts) * size <= length + len(starts) * 32 + len(starts)
+    computed = 2 * 3 * fit_tile(1080, 768, 32) * fit_tile(1920, 768, 32)
+    assert computed / (1080 * 1920) < 1.1  # was 1.71 with fixed 768 px tiles
