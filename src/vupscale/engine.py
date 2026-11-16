@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import math
 import time
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -132,7 +135,10 @@ class UpscaleEngine:
         self._compiled: Any = None
         self._fixed_units = 0  # pad model calls to this many items once compiled
         self._pinned_in: torch.Tensor | None = None
-        self._pinned_out: torch.Tensor | None = None
+        self._pinned_out: list[torch.Tensor | None] = [None]
+        self._out_index = 0
+        self._zero_copy = False
+        self._compiled_warm = False
         self._ramps: dict[tuple[int, int, bool, bool], torch.Tensor] = {}
         if self.device.type == "cuda":
             torch.backends.cudnn.benchmark = True
@@ -149,6 +155,21 @@ class UpscaleEngine:
             self._fixed_units = max(1, fixed_units)
         except Exception as exc:
             self._drop_compiled(exc)
+
+    def set_output_ring(self, size: int) -> None:
+        """Return results without the final host copy.
+
+        With a ring of ``size`` pinned buffers, ``process_batch`` hands back a view of
+        one of them, valid until ``size`` further calls. The caller must be done with a
+        result (e.g. written to the encoder) before the ring wraps around. ``size=0``
+        restores the default: every result is an independent copy.
+
+        At 8K the copy costs far more than the model on a fast GPU, so the render
+        pipeline always uses a ring.
+        """
+        self._zero_copy = size > 0
+        self._pinned_out = [None] * max(1, size)
+        self._out_index = 0
 
     def _drop_compiled(self, exc: BaseException) -> None:
         self._compiled = None
@@ -182,7 +203,13 @@ class UpscaleEngine:
             if n < self._fixed_units:  # keep the compiled shape: repeat the last item
                 x = torch.cat([x, x[-1:].expand(self._fixed_units - n, -1, -1, -1)])
             try:
-                y = self._call_fn(self._compiled, x)
+                if self._compiled_warm:
+                    y = self._call_fn(self._compiled, x)
+                else:  # the first call compiles; keep Inductor's autotune report off the screen
+                    with contextlib.redirect_stderr(io.StringIO()), warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        y = self._call_fn(self._compiled, x)
+                    self._compiled_warm = True
             except Exception as exc:
                 if is_oom(exc):
                     raise
@@ -249,16 +276,16 @@ class UpscaleEngine:
         return staged.to(self.device, non_blocking=True)
 
     def _download(self, y: torch.Tensor) -> torch.Tensor:
-        """Device -> host into the reused pinned buffer (a view of it is returned)."""
+        """Device -> host into a reused pinned buffer (a view of it is returned)."""
         if self.device.type != "cuda":
             return y
-        if (
-            self._pinned_out is None
-            or self._pinned_out.shape[1:] != y.shape[1:]
-            or self._pinned_out.shape[0] < y.shape[0]
-        ):
-            self._pinned_out = torch.empty(y.shape, dtype=torch.uint8).pin_memory()
-        staged = self._pinned_out[: y.shape[0]]
+        slot = self._out_index
+        self._out_index = (slot + 1) % len(self._pinned_out)
+        buffer = self._pinned_out[slot]
+        if buffer is None or buffer.shape[1:] != y.shape[1:] or buffer.shape[0] < y.shape[0]:
+            buffer = torch.empty(y.shape, dtype=torch.uint8).pin_memory()
+            self._pinned_out[slot] = buffer
+        staged = buffer[: y.shape[0]]
         staged.copy_(y, non_blocking=True)
         torch.cuda.synchronize(self.device)
         return staged
@@ -298,9 +325,9 @@ class UpscaleEngine:
 
         staged = self._download(y)
         clock = self._mark("download", clock)
-        if self.device.type != "cuda":
+        if self.device.type != "cuda" or self._zero_copy:
             return staged.numpy()
-        # Copy out of the reused pinned buffer: the caller may queue this for the encoder.
+        # No ring configured: copy out of the reused buffer so the result stays valid.
         out = staged.numpy().copy()
         self._mark("host copy", clock)
         return out

@@ -368,6 +368,14 @@ def calibrate(
                 units = max(2, units // 2)
         break
 
+    # Borderline results can pass once and fail on the next run (allocator fragmentation,
+    # cuDNN picking a hungrier algorithm), so the winner must also pass a second, clean run.
+    while result is not None and result.units > 1:
+        free_memory()
+        if attempt(result.units, result.tile_size) is not None:
+            break
+        result = Calibration(result.tile_size, max(1, result.units // 2), result.peak_bytes)
+
     if result is None:
         raise TuningError(
             "the model does not fit in memory for this video, even with the smallest tiles. "
@@ -614,6 +622,9 @@ class AdaptiveBatchController:
                 free_memory()
                 self._degrade()
                 continue
-            outputs.append(out)
+            if done == 0 and len(chunk) == total:
+                return out  # the common case: one call, result passed through untouched
+            # Split batch: the engine may reuse its output buffer on the next call.
+            outputs.append(out.copy())
             done += len(chunk)
-        return outputs[0] if len(outputs) == 1 else np.concatenate(outputs)
+        return np.concatenate(outputs)

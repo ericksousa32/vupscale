@@ -197,7 +197,7 @@ def test_calibration_cache_is_reused_and_revalidated(tmp_path: Path):
     gpu.calls.clear()
     second = calibrate(gpu.probe, **kwargs)
     assert second.from_cache and (second.tile_size, second.units) == (None, 8)
-    assert gpu.calls == [(8, None)]  # a single confirming run
+    assert gpu.calls == [(8, None)]  # a single confirming run, nothing else
 
     # Less free VRAM today: the cached answer no longer fits and is recomputed.
     tighter = FakeGpu(capacity_gb=8, gb_per_megapixel=1.0)
@@ -392,3 +392,34 @@ def test_oom_detection():
     assert tuning.is_oom(RuntimeError("cuDNN error: CUDNN_STATUS_ALLOC_FAILED"))
     assert tuning.is_oom(MemoryError())
     assert not tuning.is_oom(RuntimeError("size mismatch"))
+
+
+def test_calibration_steps_down_when_the_winner_fails_its_confirmation_run():
+    """A batch that fits once but not twice (fragmentation) must not be trusted."""
+    calls: list[int] = []
+
+    def flaky(units: int, tile: int | None) -> int:
+        calls.append(units)
+        if units >= 4 and calls.count(units) > 1:
+            raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
+        return units * GB
+
+    found = calibrate(flaky, frame_hw=(1080, 1920), budget_bytes=4 * GB, max_frames=4)
+    assert found.units == 2 and calls == [1, 2, 4, 4, 2]
+
+
+def test_controller_copies_results_of_split_batches():
+    """The engine may reuse its output buffer, so split batches must not alias it."""
+    shared = np.zeros((1, 4, 4, 3), dtype=np.uint8)
+
+    def reusing_engine(frames, tile, tile_batch):
+        if len(frames) > 1:
+            raise MemoryError
+        shared[:] = frames[0, 0, 0, 0]
+        return shared
+
+    frames = numbered_frames(3, 4, 4)
+    out = AdaptiveBatchController(2, None, 0, (4, 4)).run(reusing_engine, frames)
+    assert list(out[:, 0, 0, 0]) == [0, 1, 2]
+    # A batch that fits in one call is passed through without a copy.
+    assert AdaptiveBatchController(1, None, 0, (4, 4)).run(reusing_engine, frames[:1]) is shared

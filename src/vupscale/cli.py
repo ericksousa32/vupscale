@@ -320,7 +320,12 @@ def bench(
         rng = np.random.default_rng(0)
         frames = rng.integers(0, 256, (cfg.batch_size, height, width, 3), dtype=np.uint8)
         with console.status("measuring..."):
+            engine.set_output_ring(2)  # like the render pipeline: no host copy of the result
             controller.run(engine.process_batch, frames)  # warm-up (cuDNN autotune, compile)
+            if cfg.device.type == "cuda":
+                import torch
+
+                torch.cuda.reset_peak_memory_stats(cfg.device)  # report steady state only
             engine.timings = {}
             done, start = 0, time.perf_counter()
             while done == 0 or time.perf_counter() - start < seconds:
@@ -343,10 +348,9 @@ def bench(
         tile = f"{controller.tile_size} px, {controller.tile_batch} tiles per call"
     table.add_row("tiling", tile)
     table.add_row("calibrated", "yes" if cfg.calibrated else "no (CPU or estimate)")
+    table.add_row("torch.compile", "on" if engine._compiled is not None else "off")
     table.add_row("codec (auto)", f"{cfg.video_codec} ({cfg.encoder_preset})")
     if cfg.device.type == "cuda":
-        import torch
-
         peak = torch.cuda.max_memory_allocated(cfg.device) / 2**30
         table.add_row("vram peak", f"{peak:.1f} GB of {cfg.vram_total_gb:.1f} GB")
     table.add_section()
