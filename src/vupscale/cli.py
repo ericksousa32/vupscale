@@ -259,6 +259,12 @@ def doctor() -> None:
             "cpu encoders",
             "  ".join(f"{e}: {mark(report.encoders[e])}" for e in CPU_ENCODERS),
         )
+        from .config import Codec
+        from .tuning import select_encoder
+
+        hd = select_encoder(Codec.auto, 3840, 2160, report.cpu_count).encoder
+        big = select_encoder(Codec.auto, 7680, 4320, report.cpu_count).encoder
+        table.add_row("codec auto", f"{hd} (up to 4096 px), {big} (larger)")
     console.print(table)
 
     for note in report.warnings:

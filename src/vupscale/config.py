@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import math
 from dataclasses import dataclass, fields
 from enum import Enum
 from pathlib import Path
@@ -208,3 +209,32 @@ def expand_inputs(spec: str | Path) -> list[Path]:
             raise OptionsError(f"no video files match pattern: {spec}")
         return found
     raise OptionsError(f"input not found: {spec}")
+
+
+def _even(value: float) -> int:
+    """Nearest even integer >= 2 (yuv420p needs even dimensions)."""
+    return max(2, math.floor(value / 2 + 0.5) * 2)
+
+
+def compute_input_size(
+    width: int, height: int, pre_width: int = 0, pre_height: int = 0
+) -> tuple[int, int]:
+    """Size fed to the model after the optional pre-scale. A zero axis keeps the aspect ratio."""
+    if pre_width and pre_height:
+        return _even(pre_width), _even(pre_height)
+    if pre_width:
+        return _even(pre_width), _even(height * pre_width / width)
+    if pre_height:
+        return _even(width * pre_height / height), _even(pre_height)
+    return width, height
+
+
+def compute_output_size(
+    width: int, height: int, scale: int, out_scale: float = 0.0, target_height: int = 0
+) -> tuple[int, int]:
+    """Final (width, height) of the video given the size fed to the model."""
+    if target_height > 0:
+        out_h = _even(target_height)
+        return _even(width * out_h / height), out_h
+    factor = out_scale if out_scale > 0 else scale
+    return _even(width * factor), _even(height * factor)

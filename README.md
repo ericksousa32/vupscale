@@ -2,9 +2,10 @@
 
 CLI and Python API tool for upscaling videos with PyTorch (.pth) models, zero-disk streaming via FFmpeg, and adaptive auto-tuning for Google Colab, RunPod, and local GPUs.
 
-> **Status: under construction.** Stage 1 of 5 is in place (package, CLI, model catalog,
-> hardware probes). The render pipeline lands in the next stages; see
-> [docs/PLAN.md](docs/PLAN.md). Until then `--dry-run`, `doctor` and `models` work.
+> **Status: under construction.** Stages 1 and 2 of 5 are in place (package, CLI, model
+> catalog, hardware probes, auto-tuning with memory calibration and OOM recovery). The
+> render pipeline lands in the next stages; see [docs/PLAN.md](docs/PLAN.md). Until then
+> `--dry-run`, `doctor` and `models` work.
 
 ## Install
 
