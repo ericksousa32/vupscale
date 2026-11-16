@@ -75,8 +75,14 @@ def upscale(
     input_opt: Optional[str] = typer.Option(  # noqa: UP045
         None, "--input", "-i", help="Same as the INPUT argument.", show_default=False
     ),
-    model: str = typer.Option(
-        ..., "--model", "-m", help="Alias (see `vupscale models`), local .pth/.safetensors or URL."
+    # Required, but validated by hand: `Option(...)` is not enforced by every
+    # Typer/click combination found on Colab and RunPod images.
+    model: Optional[str] = typer.Option(  # noqa: UP045
+        None,
+        "--model",
+        "-m",
+        help="[required] Alias (see `vupscale models`), local .pth/.safetensors or URL.",
+        show_default=False,
     ),
     output: Optional[Path] = typer.Option(  # noqa: UP045
         None,
@@ -166,6 +172,8 @@ def upscale(
     input_spec = input_arg or input_opt
     if not input_spec:
         raise typer.BadParameter("missing INPUT (video file, directory or glob)")
+    if not model:
+        raise typer.BadParameter("missing --model / -m (run `vupscale models` for aliases)")
 
     try:
         jobs = pipeline.make_jobs(
