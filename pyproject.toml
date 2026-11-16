@@ -23,7 +23,7 @@ dependencies = [
     "torchvision",
     "spandrel>=0.4",
     "numpy",
-    "typer>=0.12",
+    "typer>=0.16",
     "rich>=13",
     "psutil",
 ]

@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-import click
 import typer
 from rich.table import Table
 from typer.core import TyperGroup
@@ -17,14 +16,18 @@ from .models import MODEL_ALIASES, ModelError, cache_dir, cached_path
 
 
 class DefaultCommandGroup(TyperGroup):
-    """Route ``vupscale <video> ...`` to the ``upscale`` command."""
+    """Route ``vupscale <video> ...`` to the ``upscale`` command.
+
+    Deliberately avoids importing ``click``: recent Typer releases vendor it instead of
+    depending on it, so it may not be installed.
+    """
 
     default_command = "upscale"
     _group_flags = frozenset(
         {"--help", "-h", "--version", "-V", "--install-completion", "--show-completion"}
     )
 
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
         if args and args[0] not in self.commands and args[0] not in self._group_flags:
             args = [self.default_command, *args]
         return super().parse_args(ctx, args)
