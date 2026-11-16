@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,12 @@ from vupscale.cli import app
 from vupscale.config import OptionsError
 
 runner = CliRunner()
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def plain(result) -> str:
+    """Output without ANSI styling (Rich forces colours on GitHub Actions)."""
+    return _ANSI.sub("", result.output)
 
 
 @pytest.fixture
@@ -30,21 +37,21 @@ def weights(tmp_path: Path) -> Path:
 def test_help_and_version():
     assert runner.invoke(app, ["--help"]).exit_code == 0
     result = runner.invoke(app, ["--version"])
-    assert result.exit_code == 0 and vupscale.__version__ in result.output
+    assert result.exit_code == 0 and vupscale.__version__ in plain(result)
     result = runner.invoke(app, ["upscale", "--help"])
-    assert result.exit_code == 0 and "--tile-size" in result.output
+    assert result.exit_code == 0 and "--tile-size" in plain(result)
 
 
 def test_models_lists_the_catalog():
     result = runner.invoke(app, ["models"])
     assert result.exit_code == 0
-    assert "realesrgan-x4" in result.output and "realesr-animevideov3" in result.output
+    assert "realesrgan-x4" in plain(result) and "realesr-animevideov3" in plain(result)
 
 
 def test_doctor_runs():
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code in (0, 1)  # 1 only when ffmpeg/torch are really missing
-    assert "environment" in result.output and "ffmpeg" in result.output
+    assert "environment" in plain(result) and "ffmpeg" in plain(result)
 
 
 @pytest.mark.parametrize("style", ["positional", "explicit", "flag"])
@@ -56,7 +63,7 @@ def test_dry_run_in_every_invocation_style(style: str, video: Path, weights: Pat
     }[style]
     result = runner.invoke(app, [*args, "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert "clip_x<scale>.mp4" in result.output
+    assert "clip_x<scale>.mp4" in plain(result)
 
 
 def test_dry_run_reflects_overrides(video: Path, weights: Path):
@@ -66,25 +73,25 @@ def test_dry_run_reflects_overrides(video: Path, weights: Path):
          "--every-nth", "2", "--tile-size", "512", "--codec", "hevc", "--crf", "18"],
     )  # fmt: skip
     assert result.exit_code == 0, result.output
-    out = result.output
+    out = plain(result)
     assert "clip_2160p.mp4" in out and "512" in out and "hevc" in out and "quality 18" in out
     assert "every_nth" in out  # audio switched off, with the reason
 
 
 def test_errors_are_friendly(video: Path, weights: Path, tmp_path: Path):
     missing = runner.invoke(app, [str(tmp_path / "nope.mp4"), "-m", str(weights)])
-    assert missing.exit_code == 2 and "input not found" in missing.output
+    assert missing.exit_code == 2 and "input not found" in plain(missing)
     conflict = runner.invoke(
         app, [str(video), "-m", str(weights), "--out-scale", "2", "--target-height", "1080"]
     )
-    assert conflict.exit_code == 2 and "either" in conflict.output
+    assert conflict.exit_code == 2 and "either" in plain(conflict)
     assert runner.invoke(app, [str(video)]).exit_code == 2  # --model is required
     assert runner.invoke(app, ["-m", str(weights)]).exit_code == 2  # input is required
 
 
 def test_real_run_reports_not_implemented_yet(video: Path, weights: Path):
     result = runner.invoke(app, [str(video), "-m", str(weights)])
-    assert result.exit_code == 1 and "not available yet" in result.output
+    assert result.exit_code == 1 and "not available yet" in plain(result)
 
 
 def test_directory_input_makes_one_job_per_video(tmp_path: Path, weights: Path):
