@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vupscale"
+version = "0.1.0.dev0"
+description = "CLI and Python API for upscaling videos with PyTorch models, zero-disk FFmpeg streaming and adaptive auto-tuning for Colab, RunPod and local GPUs."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Erick Sousa" }]
+keywords = ["video", "upscaling", "super-resolution", "pytorch", "ffmpeg", "esrgan"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Topic :: Multimedia :: Video",
+]
+# torch/torchvision are intentionally unpinned: on Colab and RunPod the
+# pre-installed build already satisfies them, so pip downloads nothing heavy.
+dependencies = [
+    "torch",
+    "torchvision",
+    "spandrel>=0.4",
+    "numpy",
+    "typer>=0.12",
+    "rich>=13",
+    "psutil",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+vupscale = "vupscale.cli:app"
+
+[project.urls]
+Repository = "https://github.com/ericksousa32/vupscale"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vupscale"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["B008"]  # typer.Option/Argument calls in defaults
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
