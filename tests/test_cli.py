@@ -113,3 +113,14 @@ def test_python_api_matches_the_cli(video: Path, weights: Path):
         vupscale.upscale_video(video, model=str(weights), every_nth=0)
     with pytest.raises(TypeError):
         vupscale.upscale_video(video, model=str(weights), not_an_option=1)
+
+
+def test_bench_runs_the_real_engine_on_cpu(tiny_model: Path):
+    result = runner.invoke(
+        app,
+        ["bench", "-m", str(tiny_model), "--size", "96x64", "--seconds", "0", "--device", "cpu"],
+    )
+    out = plain(result)
+    assert result.exit_code == 0, out
+    assert "96x64 -> 192x128" in out and "fps" in out and "fp32" in out
+    assert runner.invoke(app, ["bench", "-m", str(tiny_model), "--size", "big"]).exit_code == 2

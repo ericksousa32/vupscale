@@ -277,6 +277,85 @@ def doctor() -> None:
 
 
 @app.command()
+def bench(
+    model: str = typer.Option(..., "--model", "-m", help="Alias, local file or URL."),
+    size: str = typer.Option("1280x720", help="Input resolution to simulate, WIDTHxHEIGHT."),
+    seconds: float = typer.Option(5.0, min=0.0, help="How long to measure."),
+    device: Device = typer.Option(Device.auto, help="Inference device."),
+    precision: Precision = typer.Option(Precision.auto, help="Override the precision."),
+    batch_size: int = typer.Option(0, min=0, help="Frames per batch. 0 = auto."),
+    tile_size: int = typer.Option(0, min=-1, help="Tile size. 0 = auto, -1 = off."),
+    target_height: int = typer.Option(0, min=0, help="Final height in px. 0 = native."),
+    compile_: CompileMode = typer.Option(CompileMode.off, "--compile", help="torch.compile."),
+) -> None:
+    """Calibrate and measure inference speed for a model on synthetic frames (no video needed)."""
+    import time
+
+    import numpy as np
+
+    from .config import UpscaleOptions
+    from .engine import create_engine, load_model
+    from .models import resolve_model
+    from .tuning import AdaptiveBatchController, TuningError
+
+    console = get_console()
+    try:
+        width, height = (int(v) for v in size.lower().split("x"))
+    except ValueError as exc:
+        raise typer.BadParameter("size must look like 1920x1080") from exc
+
+    try:
+        path = resolve_model(model)
+        descriptor = load_model(path)
+        options = UpscaleOptions(
+            input=Path("bench"), model=model, device=device, precision=precision,
+            batch_size=batch_size, tile_size=tile_size, target_height=target_height,
+            compile=compile_,
+        )  # fmt: skip
+        with console.status("calibrating memory..."):
+            engine, cfg = create_engine(
+                options, descriptor, width=width, height=height, model_path=path
+            )
+        controller = AdaptiveBatchController.from_config(cfg, (height, width))
+        rng = np.random.default_rng(0)
+        frames = rng.integers(0, 256, (cfg.batch_size, height, width, 3), dtype=np.uint8)
+        with console.status("measuring..."):
+            controller.run(engine.process_batch, frames)  # warm-up (cuDNN autotune, compile)
+            done, start = 0, time.perf_counter()
+            while done == 0 or time.perf_counter() - start < seconds:
+                controller.run(engine.process_batch, frames)
+                done += len(frames)
+            elapsed = time.perf_counter() - start
+    except (OptionsError, ModelError, TuningError) as exc:
+        console.print(f"[bold red]error:[/bold red] {exc}")
+        raise typer.Exit(2) from exc
+
+    table = Table(title=f"vupscale bench: {path.name}", show_header=False, min_width=60)
+    table.add_column(style="bold cyan", no_wrap=True)
+    table.add_column()
+    table.add_row("model", f"{descriptor.architecture.name} x{descriptor.scale}")
+    table.add_row("device", f"{cfg.gpu_name} ({cfg.precision_name})")
+    table.add_row("resolution", f"{width}x{height} -> {cfg.out_width}x{cfg.out_height}")
+    table.add_row("batch size", f"{controller.batch_size}")
+    tile = "off (full frames)"
+    if controller.tile_size is not None:
+        tile = f"{controller.tile_size} px, {controller.tile_batch} tiles per call"
+    table.add_row("tiling", tile)
+    table.add_row("calibrated", "yes" if cfg.calibrated else "no (CPU or estimate)")
+    table.add_row("codec (auto)", f"{cfg.video_codec} ({cfg.encoder_preset})")
+    if cfg.device.type == "cuda":
+        import torch
+
+        peak = torch.cuda.max_memory_allocated(cfg.device) / 2**30
+        table.add_row("vram peak", f"{peak:.1f} GB of {cfg.vram_total_gb:.1f} GB")
+    table.add_section()
+    table.add_row("speed", f"[bold green]{done / elapsed:.2f} fps[/bold green] (inference only)")
+    console.print(table)
+    for note in (*cfg.notes, *engine.notes, *controller.events):
+        console.print(f"[yellow]note:[/yellow] {note}")
+
+
+@app.command()
 def models() -> None:
     """List the built-in model aliases and what is already cached."""
     console = get_console()

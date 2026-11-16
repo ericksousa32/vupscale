@@ -2,10 +2,10 @@
 
 CLI and Python API tool for upscaling videos with PyTorch (.pth) models, zero-disk streaming via FFmpeg, and adaptive auto-tuning for Google Colab, RunPod, and local GPUs.
 
-> **Status: under construction.** Stages 1 and 2 of 5 are in place (package, CLI, model
-> catalog, hardware probes, auto-tuning with memory calibration and OOM recovery). The
+> **Status: under construction.** Stages 1 to 3 of 5 are in place (package, CLI, model
+> catalog, hardware probes, auto-tuning, inference engine with seamless tiling). The
 > render pipeline lands in the next stages; see [docs/PLAN.md](docs/PLAN.md). Until then
-> `--dry-run`, `doctor` and `models` work.
+> `--dry-run`, `doctor`, `models` and `bench` work.
 
 ## Install
 
@@ -45,6 +45,7 @@ URL (downloaded once and cached in `~/.cache/vupscale/models`).
 | Command | What it does |
 |---|---|
 | `vupscale doctor` | Environment, GPU, FFmpeg, and which encoders really work (tested with a real encode) |
+| `vupscale bench -m MODEL --size 1920x1080` | Calibrate memory and measure inference speed on synthetic frames |
 | `vupscale models` | Built-in model aliases and what is cached |
 | `vupscale upscale --help` | Every option, grouped by topic |
 

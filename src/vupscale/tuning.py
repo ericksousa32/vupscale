@@ -304,6 +304,7 @@ def calibrate(
     fixed_frames: int = 0,
     max_frames: int = MAX_BATCH,
     max_tiles: int = MAX_BATCH,
+    tile_overlap: int | None = None,
     cache_key: str | None = None,
     cache_file: Path | None = None,
 ) -> Calibration:
@@ -348,7 +349,12 @@ def calibrate(
         peak1 = attempt(1, tile)
         if peak1 is None:
             continue
-        limit = max_frames if tile is None else max_tiles
+        limit = max_frames
+        if tile is not None:
+            # Tiles are probed on a single frame, so one frame's worth is the ceiling.
+            limit = max_tiles
+            if tile_overlap is not None:
+                limit = min(limit, tiles_per_frame(*frame_hw, tile, tile_overlap))
         result = Calibration(tile, 1, peak1)
         if limit >= 2 and (peak2 := attempt(2, tile)) is not None:
             result = Calibration(tile, 2, peak2)
@@ -478,6 +484,7 @@ def build_runtime_config(
             tile_option=options.tile_size,
             fixed_frames=options.batch_size,
             max_frames=min(MAX_BATCH, ram_batch_cap),
+            tile_overlap=options.tile_overlap,
             cache_key=key,
         )
         tile_size, units, calibrated = found.tile_size, found.units, True
@@ -501,9 +508,9 @@ def build_runtime_config(
         batch_size = options.batch_size or min(units, ram_batch_cap)
         tile_batch = 0
     else:
-        tile_batch = units
         per_frame = tiles_per_frame(height, width, tile_size, options.tile_overlap)
-        batch_size = options.batch_size or max(1, min(units // per_frame, 4, ram_batch_cap))
+        tile_batch = min(units, per_frame)
+        batch_size = options.batch_size or 1  # with tiling the tiles are the batch
         if not traits.tiling_recommended and options.tile_size == 0:
             notes.append("this model discourages tiling, but the full frame does not fit in VRAM")
     if batch_size > ram_batch_cap:
