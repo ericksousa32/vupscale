@@ -321,7 +321,8 @@ def bench(
         frames = rng.integers(0, 256, (cfg.batch_size, height, width, 3), dtype=np.uint8)
         with console.status("measuring..."):
             engine.set_output_ring(2)  # like the render pipeline: no host copy of the result
-            controller.run(engine.process_batch, frames)  # warm-up (cuDNN autotune, compile)
+            for _ in range(2):  # warm-up: cuDNN autotune, compile, and both ring buffers
+                controller.run(engine.process_batch, frames)
             if cfg.device.type == "cuda":
                 import torch
 

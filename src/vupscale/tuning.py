@@ -329,12 +329,22 @@ def calibrate(
             return None
         return peak if peak <= budget_bytes else None
 
+    def steady(units: int, tile: int | None) -> int | None:
+        """Two runs back to back. The first run of a shape is the easy one: cuDNN empties
+        the allocator cache to autotune. Only the second shows the steady state a render
+        lives in (measured on an RTX 4090: a batch passed once, then failed every time)."""
+        first = attempt(units, tile)
+        if first is None:
+            return None
+        second = attempt(units, tile)
+        return None if second is None else max(first, second)
+
     path = cache_file or calibration_cache_file()
     cache = _load_cache(path) if cache_key else {}
     hit = cache.get(cache_key) if cache_key else None
     if isinstance(hit, dict) and isinstance(hit.get("units"), int):
         tile = hit.get("tile")
-        peak = attempt(hit["units"], tile)  # one cheap run confirms it still fits today
+        peak = steady(hit["units"], tile)  # confirm it still fits today
         if peak is not None:
             return Calibration(tile, hit["units"], peak, from_cache=True)
 
@@ -368,11 +378,11 @@ def calibrate(
                 units = max(2, units // 2)
         break
 
-    # Borderline results can pass once and fail on the next run (allocator fragmentation,
-    # cuDNN picking a hungrier algorithm), so the winner must also pass a second, clean run.
+    # The winner must also hold in steady state, or it steps down.
     while result is not None and result.units > 1:
-        free_memory()
-        if attempt(result.units, result.tile_size) is not None:
+        peak = steady(result.units, result.tile_size)
+        if peak is not None:
+            result = Calibration(result.tile_size, result.units, peak)
             break
         result = Calibration(result.tile_size, max(1, result.units // 2), result.peak_bytes)
 
@@ -481,7 +491,7 @@ def build_runtime_config(
             key = "|".join(
                 str(part)
                 for part in (
-                    gpu.name, model_id, f"{width}x{height}", dtype, torch.__version__,
+                    "v2", gpu.name, model_id, f"{width}x{height}", dtype, torch.__version__,
                     f"tile={options.tile_size}", f"batch={options.batch_size}",
                 )
             )  # fmt: skip

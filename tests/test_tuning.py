@@ -197,7 +197,7 @@ def test_calibration_cache_is_reused_and_revalidated(tmp_path: Path):
     gpu.calls.clear()
     second = calibrate(gpu.probe, **kwargs)
     assert second.from_cache and (second.tile_size, second.units) == (None, 8)
-    assert gpu.calls == [(8, None)]  # a single confirming run, nothing else
+    assert gpu.calls == [(8, None), (8, None)]  # only the steady-state confirmation
 
     # Less free VRAM today: the cached answer no longer fits and is recomputed.
     tighter = FakeGpu(capacity_gb=8, gb_per_megapixel=1.0)
@@ -394,18 +394,38 @@ def test_oom_detection():
     assert not tuning.is_oom(RuntimeError("size mismatch"))
 
 
-def test_calibration_steps_down_when_the_winner_fails_its_confirmation_run():
-    """A batch that fits once but not twice (fragmentation) must not be trusted."""
+def test_calibration_requires_the_winner_to_fit_twice_in_a_row():
+    """Seen on an RTX 4090: a batch fits on its first run and never again."""
     calls: list[int] = []
 
-    def flaky(units: int, tile: int | None) -> int:
+    def first_run_only(units: int, tile: int | None) -> int:
         calls.append(units)
         if units >= 4 and calls.count(units) > 1:
             raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
         return units * GB
 
-    found = calibrate(flaky, frame_hw=(1080, 1920), budget_bytes=4 * GB, max_frames=4)
-    assert found.units == 2 and calls == [1, 2, 4, 4, 2]
+    kwargs = dict(frame_hw=(1080, 1920), budget_bytes=4 * GB, max_frames=4)
+    found = calibrate(first_run_only, **kwargs)
+    assert found.units == 2 and calls == [1, 2, 4, 4, 2, 2]
+
+
+def test_stale_cache_entry_that_only_fits_once_is_recalibrated(tmp_path: Path):
+    cache = tmp_path / "calibration.json"
+    cache.write_text('{"k": {"tile": null, "units": 4}}')
+    calls: list[int] = []
+
+    def first_run_only(units: int, tile: int | None) -> int:
+        calls.append(units)
+        if units >= 4 and calls.count(units) > 1:
+            raise torch.cuda.OutOfMemoryError("CUDA out of memory (simulated)")
+        return units * GB
+
+    found = calibrate(
+        first_run_only, frame_hw=(1080, 1920), budget_bytes=4 * GB, max_frames=4,
+        cache_key="k", cache_file=cache,
+    )  # fmt: skip
+    assert found.units == 2 and not found.from_cache
+    assert '"units": 2' in cache.read_text()
 
 
 def test_controller_copies_results_of_split_batches():
