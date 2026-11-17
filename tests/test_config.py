@@ -53,10 +53,10 @@ def test_invalid_options_are_rejected(bad):
         opts(**bad)
 
 
-def test_audio_is_dropped_only_when_sync_is_impossible():
+def test_audio_is_kept_unless_disabled():
     assert opts().audio_disabled_reason is None
     assert opts(skip_frames=10, fps=12).audio_disabled_reason is None
-    assert "every_nth" in opts(every_nth=2).audio_disabled_reason
+    assert opts(every_nth=2, max_frames=10).audio_disabled_reason is None
     assert "no-audio" in opts(no_audio=True).audio_disabled_reason
 
 

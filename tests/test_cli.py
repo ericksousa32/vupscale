@@ -75,7 +75,7 @@ def test_dry_run_reflects_overrides(video: Path, weights: Path):
     assert result.exit_code == 0, result.output
     out = plain(result)
     assert "clip_2160p.mp4" in out and "512" in out and "hevc" in out and "quality 18" in out
-    assert "every_nth" in out  # audio switched off, with the reason
+    assert "every 2th" in out and "copied from the input" in out  # audio stays in sync
 
 
 def test_errors_are_friendly(video: Path, weights: Path, tmp_path: Path):

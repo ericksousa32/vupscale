@@ -33,7 +33,7 @@ Decode, inferência e encode rodam em paralelo. Na versão serial (ler → infer
 
 1. **A100 e H100 não têm NVENC.** Essas GPUs de datacenter só têm decodificadores (NVDEC). O codec `auto` precisa fazer um **encode de teste real** (`ffmpeg -f lavfi -i nullsrc=s=256x256 -frames:v 1 -c:v h264_nvenc -f null -`). Só olhar a lista de `ffmpeg -encoders` não basta, porque o encoder aparece listado mas falha. A T4 tem NVENC H.264/HEVC, mas **não AV1** (AV1 NVENC só existe a partir da Ada: L4, L40S, RTX 40xx).
 2. **H.264 NVENC tem limite de 4096 px de largura.** 1080p × 4 = 7680×4320 falha com `h264_nvenc`. Com `auto`, use **HEVC quando a saída passar de 4096 px** (o HEVC NVENC suporta até 8192).
-3. **Dessincronização de áudio.** `--skip-frames` sem aplicar o mesmo offset no áudio dessincroniza tudo. O áudio precisa de `-ss <skip/fps>` na entrada de áudio. Com `--every-nth > 1` (vídeo acelerado), o áudio deve ser **desativado com aviso**. O `--fps` só reamostra os frames sem mudar a duração, então o áudio continua sincronizado.
+3. **Dessincronização de áudio.** `--skip-frames` sem aplicar o mesmo offset no áudio dessincroniza tudo. O áudio precisa de `-ss <skip/fps>` na entrada de áudio. O `--every-nth` divide a taxa de quadros da saída (como o `loaded_fps` do VHS) e o `--fps` só reamostra os frames, então nenhum dos dois muda a duração e o áudio continua sincronizado.
 4. **Cores deslocadas (BT.601 vs BT.709).** A conversão `rgb24 → yuv420p` do FFmpeg usa BT.601 por padrão, o que deixa vídeos HD/4K com tons esverdeados ou avermelhados. No decoder: `scale=in_color_matrix=auto:in_range=auto`. No encoder: `scale=out_color_matrix=bt709:out_range=tv`, mais `-colorspace bt709 -color_primaries bt709 -color_trc bt709`.
 5. **Precisão: fp16 em vez de bf16 como padrão nas Ampere+.** Para inferência de SR, o fp16 tem 10 bits de mantissa contra 7 do bf16, o que dá menos banding em gradientes, e a velocidade é igual nos Tensor Cores. O bf16 só ajuda quando o modelo estoura o alcance do fp16. A regra nova usa os campos do descritor do `spandrel`:
    - `supports_half` → `fp16` (qualquer GPU, inclusive T4);
@@ -115,7 +115,7 @@ Decode, inferência e encode rodam em paralelo. Na versão serial (ler → infer
 
 - Reader e writer em threads com filas limitadas; `readinto` sem cópia; drenagem do `stderr` em `deque`.
 - Filtros na ordem `fps → trim → select → scale`, com seek `-ss` para skip e resume (CFR).
-- Áudio com o mesmo offset do vídeo; desativado com aviso quando `every_nth > 1`.
+- Áudio com o mesmo offset do vídeo; mantido com `every_nth > 1`, porque a taxa de quadros da saída é dividida.
 - Metadados de cor BT.709 corretos nas duas pontas.
 - NVENC com `-rc vbr -cq <q> -preset p5 -tune hq`; CPU com `-crf`. `--quality` unificado (0–51), mapeado para `crf` ou `cq`.
 
@@ -221,7 +221,7 @@ Implemente `src/vupscale/video_io.py` com subprocess e pipes (nada de frames em 
 4. `VideoStreamWriter` (context manager + thread consumidora com fila limitada):
    - stdin rawvideo rgb24 (WxH, fps de saída); conversão `scale=out_color_matrix=bt709:out_range=tv,format={pix_fmt}` + `-colorspace bt709 -color_primaries bt709 -color_trc bt709`.
    - Codecs: h264→libx264, hevc→libx265 (+ `-tag:v hvc1`), av1→libsvtav1 (se ausente, libaom-av1). CPU: `-crf {quality} -preset {preset}`. NVENC: `-rc vbr -cq {quality} -b:v 0 -preset p5 -tune hq`.
-   - Áudio: quando habilitado, `-ss {audio_offset}` na segunda entrada; `-map 0:v:0 -map 1:a:0?`, `-c:a copy` com fallback automático (re-executar o mux) para `aac -b:a 192k`; `-shortest`. Desative o áudio com aviso se every_nth>1 (o filtro fps preserva a duração, então o áudio segue em sincronia).
+   - Áudio: quando habilitado, `-ss {audio_offset}` na segunda entrada; `-map 0:v:0 -map 1:a:0?`, `-c:a copy` com fallback automático (re-executar o mux) para `aac -b:a 192k`; `-shortest`. Com every_nth>1 a taxa de quadros da saída é dividida por N, então a duração e a sincronia do áudio são preservadas.
    - `-movflags +faststart`. Garanta largura/altura pares (pad de 1 px se necessário).
    - Drene o stderr em thread daemon para `deque(maxlen=200)`; em erro, levante uma exceção com as últimas linhas.
 5. `concat_segments(segments, output, audio_source, audio_offset, no_audio)`: lista para `-f concat -safe 0`, `-c:v copy`, áudio com o offset correto; escrita em `.part` + `os.replace`.

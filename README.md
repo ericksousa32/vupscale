@@ -2,8 +2,9 @@
 
 CLI and Python API tool for upscaling videos with PyTorch (.pth) models, zero-disk streaming via FFmpeg, and adaptive auto-tuning for Google Colab, RunPod, and local GPUs.
 
-> **Status: under construction.** Stages 1 to 3 of 5 are in place (package, CLI, model
-> catalog, hardware probes, auto-tuning, inference engine with seamless tiling). The
+> **Status: under construction.** Stages 1 to 4 of 5 are in place (package, CLI, model
+> catalog, hardware probes, auto-tuning, inference engine with seamless tiling, FFmpeg
+> streaming reader and writer). The
 > render pipeline lands in the next stages; see [docs/PLAN.md](docs/PLAN.md). Until then
 > `--dry-run`, `doctor`, `models` and `bench` work.
 

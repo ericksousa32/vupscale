@@ -139,14 +139,13 @@ class UpscaleOptions:
 
     @property
     def audio_disabled_reason(self) -> str | None:
-        """Why audio cannot be kept in sync, or ``None`` when it can be muxed."""
-        if self.no_audio:
-            return "disabled by --no-audio"
-        if self.every_nth > 1:
-            return "every_nth > 1 changes playback speed"
-        # --fps resamples (drops/duplicates frames) without changing duration,
-        # and --skip-frames is compensated with an audio offset, so both stay in sync.
-        return None
+        """Why audio is dropped, or ``None`` when it is muxed from the input.
+
+        None of the frame options breaks sync: ``fps`` resamples without changing the
+        duration, ``every_nth`` divides the frame rate, and ``skip_frames`` /
+        ``max_frames`` trim the audio by the same amount.
+        """
+        return "disabled by --no-audio" if self.no_audio else None
 
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
