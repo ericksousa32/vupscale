@@ -165,6 +165,9 @@ def upscale(
 ) -> None:
     """Upscale a video, a directory of videos or a glob pattern."""
     from . import pipeline
+    from .checkpoint import CheckpointError
+    from .tuning import TuningError
+    from .video_io import VideoError
 
     console = get_console()
     if input_arg and input_opt:
@@ -204,15 +207,12 @@ def upscale(
             dry_run=dry_run,
         )
         for job in jobs:
-            result = pipeline.run(job)
-            if not dry_run:
-                console.print(f"[green]done:[/green] {result}")
-    except (OptionsError, ModelError) as exc:
+            pipeline.run(job)
+    except (OptionsError, ModelError, VideoError, TuningError, CheckpointError) as exc:
         console.print(f"[bold red]error:[/bold red] {exc}")
         raise typer.Exit(2) from exc
-    except NotImplementedError as exc:
-        console.print(f"[bold yellow]not available yet:[/bold yellow] {exc}")
-        raise typer.Exit(1) from exc
+    except KeyboardInterrupt as exc:
+        raise typer.Exit(130) from exc
 
 
 @app.command()

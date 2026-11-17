@@ -2,11 +2,8 @@
 
 CLI and Python API tool for upscaling videos with PyTorch (.pth) models, zero-disk streaming via FFmpeg, and adaptive auto-tuning for Google Colab, RunPod, and local GPUs.
 
-> **Status: under construction.** Stages 1 to 4 of 5 are in place (package, CLI, model
-> catalog, hardware probes, auto-tuning, inference engine with seamless tiling, FFmpeg
-> streaming reader and writer). The
-> render pipeline lands in the next stages; see [docs/PLAN.md](docs/PLAN.md). Until then
-> `--dry-run`, `doctor`, `models` and `bench` work.
+> **Status: beta.** All five stages of [docs/PLAN.md](docs/PLAN.md) are implemented and
+> covered by tests. Developed on `dev`; `main` receives tested pull requests.
 
 ## Install
 
@@ -42,6 +39,17 @@ upscale_video(
 
 `--model` accepts a built-in alias, a local `.pth` / `.safetensors` file or an HTTP(S)
 URL (downloaded once and cached in `~/.cache/vupscale/models`).
+
+### Resumable renders
+
+With `--checkpoint-dir` the video is rendered in segments (about 3 minutes of work each,
+see `--segment-seconds`). Segments are encoded on local disk and copied to the checkpoint
+directory when complete, so it can live on Google Drive. After a disconnect, run the same
+command with `--resume`: valid segments are kept, damaged ones are redone, and only the
+missing frames are rendered. Ctrl+C saves the segment in progress.
+
+The progress line shows speed, VRAM, ETA and `limit:` - which stage is holding the
+render back (`gpu`, `decode` or `encode`).
 
 | Command | What it does |
 |---|---|

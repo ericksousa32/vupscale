@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,8 @@ from typer.testing import CliRunner
 import vupscale
 from vupscale import pipeline
 from vupscale.cli import app
-from vupscale.config import OptionsError
+from vupscale.config import OptionsError, resolve_output
+from vupscale.video_io import probe_video
 
 runner = CliRunner()
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -21,17 +23,15 @@ def plain(result) -> str:
 
 
 @pytest.fixture
-def video(tmp_path: Path) -> Path:
+def video(tmp_path: Path, sample_video: Path) -> Path:
     path = tmp_path / "clip.mp4"
-    path.touch()  # planning never opens the file
+    shutil.copyfile(sample_video, path)
     return path
 
 
 @pytest.fixture
-def weights(tmp_path: Path) -> Path:
-    path = tmp_path / "model.pth"
-    path.write_bytes(b"x")
-    return path
+def weights(tiny_model: Path) -> Path:
+    return tiny_model
 
 
 def test_help_and_version():
@@ -63,19 +63,20 @@ def test_dry_run_in_every_invocation_style(style: str, video: Path, weights: Pat
     }[style]
     result = runner.invoke(app, [*args, "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert "clip_x<scale>.mp4" in plain(result)
+    assert "clip_x2.mp4" in plain(result) and "nothing was rendered" in plain(result)
 
 
 def test_dry_run_reflects_overrides(video: Path, weights: Path):
     result = runner.invoke(
         app,
         [str(video), "-m", str(weights), "--dry-run", "--target-height", "2160",
-         "--every-nth", "2", "--tile-size", "512", "--codec", "hevc", "--crf", "18"],
+         "--every-nth", "2", "--tile-size", "128", "--codec", "hevc", "--crf", "18"],
     )  # fmt: skip
     assert result.exit_code == 0, result.output
     out = plain(result)
-    assert "clip_2160p.mp4" in out and "512" in out and "hevc" in out and "quality 18" in out
-    assert "every 2th" in out and "copied from the input" in out  # audio stays in sync
+    assert "clip_2160p.mp4" in out and "up to 128 px" in out and "libx265" in out
+    assert "quality 18" in out and "320x240 -> 2880x2160" in out
+    assert "24 at 12.000 fps" in out and "aac from the input" in out  # audio stays in sync
 
 
 def test_errors_are_friendly(video: Path, weights: Path, tmp_path: Path):
@@ -89,9 +90,11 @@ def test_errors_are_friendly(video: Path, weights: Path, tmp_path: Path):
     assert runner.invoke(app, ["-m", str(weights)]).exit_code == 2  # input is required
 
 
-def test_real_run_reports_not_implemented_yet(video: Path, weights: Path):
-    result = runner.invoke(app, [str(video), "-m", str(weights)])
-    assert result.exit_code == 1 and "not available yet" in plain(result)
+def test_real_run_end_to_end(video: Path, weights: Path):
+    result = runner.invoke(app, [str(video), "-m", str(weights), "--max-frames", "6"])
+    assert result.exit_code == 0, plain(result)
+    assert "done:" in plain(result)
+    assert probe_video(video.with_name("clip_x2.mp4")).total_frames == 6
 
 
 def test_directory_input_makes_one_job_per_video(tmp_path: Path, weights: Path):
@@ -101,14 +104,15 @@ def test_directory_input_makes_one_job_per_video(tmp_path: Path, weights: Path):
     jobs = pipeline.make_jobs(tmp_path, str(weights), checkpoint_dir=ckpt, output=tmp_path / "out")
     assert [j.input.name for j in jobs] == ["a.mp4", "b.mkv"]
     assert [j.checkpoint_dir for j in jobs] == [ckpt / "a", ckpt / "b"]
-    assert pipeline.describe_output(jobs[1]) == str(tmp_path / "out" / "b_x<scale>.mp4")
+    assert resolve_output(jobs[1], 2) == tmp_path / "out" / "b_x2.mp4"
     with pytest.raises(OptionsError, match="directory"):
         pipeline.make_jobs(tmp_path, str(weights), output=tmp_path / "single.mp4")
 
 
 def test_python_api_matches_the_cli(video: Path, weights: Path):
-    result = vupscale.upscale_video(video, model=str(weights), dry_run=True, out_scale=2)
-    assert result == video.with_name("clip_x<scale>.mp4")
+    result = vupscale.upscale_video(video, model=str(weights), dry_run=True, out_scale=1.5)
+    assert result == video.with_name("clip_x1.5.mp4")
+    assert not result.exists()
     with pytest.raises(OptionsError):
         vupscale.upscale_video(video, model=str(weights), every_nth=0)
     with pytest.raises(TypeError):
