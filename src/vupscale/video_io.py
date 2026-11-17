@@ -213,17 +213,18 @@ class DecodePlan:
 
 
 def _input_matrix(meta: VideoMetadata) -> str:
+    # Only names every FFmpeg release accepts for scale's in_color_matrix.
     known = {
         "bt709": "bt709",
-        "smpte170m": "smpte170m",
-        "bt470bg": "bt470bg",
+        "smpte170m": "bt601",
+        "bt470bg": "bt601",
         "bt2020nc": "bt2020",
         "bt2020c": "bt2020",
     }
     if meta.color_space in known:
         return known[meta.color_space]
     # Untagged: follow the usual convention, HD is BT.709 and SD is BT.601.
-    return "bt709" if meta.height >= 720 or meta.width >= 1280 else "smpte170m"
+    return "bt709" if meta.height >= 720 or meta.width >= 1280 else "bt601"
 
 
 def plan_decode(meta: VideoMetadata, options: UpscaleOptions, start_frame: int = 0) -> DecodePlan:

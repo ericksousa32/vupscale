@@ -227,7 +227,8 @@ def test_untagged_sd_video_is_read_as_bt601(tmp_path: Path):
     meta = probe_video(clip)
     assert meta.color_space in ("", "bt470bg", "smpte170m")
     untagged = replace(meta, color_space="")
-    assert _input_matrix(untagged) == "smpte170m"
+    assert _input_matrix(untagged) == "bt601"
+    assert _input_matrix(replace(untagged, color_space="bt470bg")) == "bt601"
     assert _input_matrix(replace(untagged, width=1920, height=1080)) == "bt709"
     assert _input_matrix(replace(untagged, color_space="bt2020nc")) == "bt2020"
     _, decoded = read_all(clip)
