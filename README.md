@@ -2,8 +2,8 @@
 
 CLI and Python API tool for upscaling videos with PyTorch (.pth) models, zero-disk streaming via FFmpeg, and adaptive auto-tuning for Google Colab, RunPod, and local GPUs.
 
-> **Status: beta.** All five stages of [docs/PLAN.md](docs/PLAN.md) are implemented and
-> covered by tests. Developed on `dev`; `main` receives tested pull requests.
+> **Status: beta.** Feature complete and covered by tests. Developed on `dev`; `main`
+> receives tested pull requests.
 
 ## Install
 

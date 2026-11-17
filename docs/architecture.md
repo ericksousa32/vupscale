@@ -117,18 +117,22 @@ complete. A failed or interrupted render leaves either a finished file or no fil
   main thread.
 - On any exit path, subprocesses are killed and threads joined.
 
-## Differences from the original plan
+## Design decisions
 
-[PLAN.md](PLAN.md) is the design document the project started from. What changed along
-the way:
+Choices that are not obvious from the code, and why they were made.
 
-| Plan | Built |
+| Decision | Reason |
 |---|---|
-| Auto-tuning inside `hardware.py` | Split into `hardware.py` (facts) and `tuning.py` (decisions) |
-| Linear blending ramp between tiles | Raised-cosine ramp, which suppresses tile edges better |
-| Fixed-size tiles | Tiles sized to divide the frame evenly |
-| Audio dropped with `--every-nth` | Kept: the frame rate is divided instead, as VideoHelperSuite does |
-| `-shortest` when muxing audio | Removed: it let a short audio track truncate the video |
-| One confirmation run in calibration | Two runs back to back, after a batch was seen to fit only once on an RTX 4090 |
-| Optional NVDEC decoding | Not implemented; to be considered if `limit: decode` shows up in practice |
-| Batch scaled with tiling | Batch is one frame when tiling; tiles per call carry the parallelism |
+| `hardware.py` (facts) is separate from `tuning.py` (decisions) | The decisions can be tested on a CPU-only machine with simulated GPUs |
+| Memory is measured, not estimated | Activation memory differs by orders of magnitude between architectures; no formula holds |
+| Calibration confirms with two runs back to back | On an RTX 4090 a batch was seen to fit on its first run and never again |
+| fp16 is preferred over bf16, even on recent GPUs | More mantissa bits, so less banding, at the same speed |
+| Tiles are sized to divide the frame evenly | Fixed 768 px tiles on 1080p recomputed 71% more pixels than the frame has |
+| Raised-cosine blending between tiles | Gives almost no weight to tile edges, where the model has the least context |
+| With tiling, the batch is one frame | The tiles per call carry the parallelism; it keeps memory predictable |
+| Results reach the encoder without a host copy | At 8K on a fast GPU that copy cost far more than the model |
+| `--every-nth` divides the frame rate | Duration and audio sync are preserved, as in VideoHelperSuite |
+| Audio is trimmed explicitly, never with `-shortest` | `-shortest` lets a short audio track truncate the video |
+| Segments are cut by processing time | A fixed frame count means seconds of work with one model and half an hour with another |
+| NVENC is detected with a real encode | FFmpeg lists NVENC encoders on GPUs that cannot use them |
+| No NVDEC decoding | Not needed so far; worth revisiting if `limit: decode` shows up in practice |

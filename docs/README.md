@@ -29,6 +29,3 @@ vupscale video.mp4 -m realesrgan-x4
 | [Performance](performance.md) | Measured speeds, `vupscale bench`, finding the bottleneck |
 | [Architecture](architecture.md) | Modules, the three-stage pipeline, buffer lifetimes |
 | [Development](development.md) | Tests, CI, branch workflow, adding a model alias |
-
-[PLAN.md](PLAN.md) is the original design document (in Portuguese). It is kept for
-history; where it differs from these pages, these pages describe what was built.
