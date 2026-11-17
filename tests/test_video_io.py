@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from vupscale.video_io import (
     VideoError,
     VideoStreamReader,
     VideoStreamWriter,
+    _input_matrix,
     audio_codec_args,
     concat_segments,
     count_frames,
@@ -172,7 +174,7 @@ def test_decode_failure_is_reported(sample_video: Path, tmp_path: Path):
     meta = probe_video(sample_video)
     broken.write_bytes(data[: len(data) // 3])  # truncated after probing the good file
     plan = plan_decode(meta, UpscaleOptions(input=broken, model="m"))
-    bad_meta = type(meta)(**{**meta.__dict__, "path": broken})
+    bad_meta = replace(meta, path=broken)
     with pytest.raises(VideoError), VideoStreamReader(bad_meta, plan, 4) as reader:
         assert sum(len(b) for b in reader) < 48
         raise VideoError("fewer frames than planned")  # either path is a reported failure
@@ -221,7 +223,13 @@ def test_untagged_sd_video_is_read_as_bt601(tmp_path: Path):
          str(clip)],
         check=True,
     )  # fmt: skip
-    assert probe_video(clip).color_space == ""
+    # Older FFmpeg leaves the file untagged, newer ones tag it; both must decode as BT.601.
+    meta = probe_video(clip)
+    assert meta.color_space in ("", "bt470bg", "smpte170m")
+    untagged = replace(meta, color_space="")
+    assert _input_matrix(untagged) == "smpte170m"
+    assert _input_matrix(replace(untagged, width=1920, height=1080)) == "bt709"
+    assert _input_matrix(replace(untagged, color_space="bt2020nc")) == "bt2020"
     _, decoded = read_all(clip)
     assert np.abs(decoded.reshape(-1, 3).mean(axis=0) - (200, 30, 30)).max() <= 4
 
