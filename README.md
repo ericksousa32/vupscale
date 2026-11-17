@@ -58,6 +58,21 @@ render back (`gpu`, `decode` or `encode`).
 | `vupscale models` | Built-in model aliases and what is cached |
 | `vupscale upscale --help` | Every option, grouped by topic |
 
+## Documentation
+
+Full documentation lives in [docs/](docs/README.md):
+[getting started](docs/getting-started.md) ·
+[CLI reference](docs/cli.md) ·
+[Python API](docs/python-api.md) ·
+[models](docs/models.md) ·
+[video options](docs/video.md) ·
+[checkpoints](docs/checkpoints.md) ·
+[auto-tuning](docs/auto-tuning.md) ·
+[performance](docs/performance.md) ·
+[architecture](docs/architecture.md) ·
+[development](docs/development.md) ·
+[troubleshooting](docs/troubleshooting.md)
+
 ## Development
 
 ```bash

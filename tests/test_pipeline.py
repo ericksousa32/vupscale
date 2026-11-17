@@ -276,3 +276,10 @@ def test_slow_mounts_are_written_through_local_disk(
     )
     assert probe_video(out).total_frames == 4
     assert [p.name for p in out.parent.iterdir()] == ["o.mp4"]
+
+
+def test_a_finished_checkpoint_dir_can_host_a_new_job(clip: Path, tiny_model: Path, tmp_path: Path):
+    common = dict(model=str(tiny_model), checkpoint_dir=tmp_path / "ckpt", resume=True)
+    upscale_video(clip, output=tmp_path / "a.mp4", max_frames=4, **common)
+    second = upscale_video(clip, output=tmp_path / "b.mp4", max_frames=6, **common)
+    assert probe_video(second).total_frames == 6

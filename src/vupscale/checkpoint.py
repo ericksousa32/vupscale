@@ -129,6 +129,11 @@ class CheckpointStore:
             return 0
 
         old = previous.get("job", {})
+        if previous.get("completed") and old != job:
+            # The last job here finished; this is a new one reusing the directory.
+            self._wipe()
+            self._write_manifest({"job": job, "completed": False})
+            return 0
         changed = sorted(k for k in set(old) | set(job) if old.get(k) != job.get(k))
         if changed:
             details = ", ".join(f"{k}: {old.get(k)!r} -> {job.get(k)!r}" for k in changed)

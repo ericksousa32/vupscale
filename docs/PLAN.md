@@ -1,3 +1,7 @@
+> **Note:** this is the original design document, kept for history (in Portuguese).
+> The implementation differs in places; see [architecture.md](architecture.md#differences-from-the-original-plan)
+> and the rest of the [documentation](README.md) for what was built.
+
 ## Arquitetura Consolidada (ComfyUI VHS -> CLI + API Python Universal) — v2
 
 A ferramenta (`vupscale`) traduz o fluxo em nós do ComfyUI (_VideoHelperSuite_) em um pipeline de _streaming_ agnóstico de ambiente, de uma **NVIDIA T4 (15 GB VRAM / 12.7 GB RAM / 2 vCPUs)** no Colab Free até **RTX 4090, L4, L40S, A100 ou H100** no RunPod e no Colab Pro.
