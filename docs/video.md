@@ -66,22 +66,27 @@ Output dimensions are always rounded to even numbers, as `yuv420p` requires.
 
 ## Codec
 
-`--codec auto` (the default) picks an encoder for the output resolution:
+`--codec auto` (the default) picks an encoder for the output resolution, trying hardware
+encoders first: NVENC (NVIDIA), then VAAPI (AMD, and Intel, on Linux), then the CPU.
 
-| Output | Encoder chosen |
-|---|---|
-| Longest side up to 4096 px | `h264_nvenc`, or `libx264` without NVENC |
-| Longest side up to 8192 px | `hevc_nvenc`, or `libx265` without NVENC |
-| Larger than 8192 px | `libx265` |
+| Output | Hardware | CPU fallback |
+|---|---|---|
+| Longest side up to 4096 px | `h264_nvenc` or `h264_vaapi` | `libx264` |
+| Longest side up to 8192 px | `hevc_nvenc` or `hevc_vaapi` | `libx265` |
+| Larger than 8192 px | none | `libx265` |
 
-H.264 NVENC cannot encode frames wider than 4096 px, which is why 4x from 1080p (8K)
-switches to HEVC.
+H.264 hardware encoders on both NVIDIA and AMD cannot encode frames wider than 4096 px,
+which is why 4x from 1080p (8K) switches to HEVC.
 
-NVENC is used only if a real test encode succeeds on the machine. This matters because:
+A hardware encoder is used only if a real test encode, at the actual output resolution,
+succeeds on the machine. This matters because:
 
 - Data-centre GPUs such as the A100 and H100 have no NVENC hardware.
 - A Tesla T4 has H.264 and HEVC NVENC but no AV1.
-- AV1 NVENC needs an RTX 40-series, L4, L40S or newer.
+- AV1 hardware encoding needs an RTX 40-series, L4 or L40S on NVIDIA, or RDNA 3 or newer
+  on AMD.
+- VAAPI depends on the Mesa driver: some distributions ship it without H.264 and HEVC.
+  See [AMD GPUs](amd.md#3-ffmpeg-with-vaapi).
 
 Explicit choices:
 
@@ -89,7 +94,11 @@ Explicit choices:
 |---|---|
 | `h264`, `hevc` | `libx264`, `libx265` (CPU) |
 | `av1` | `libsvtav1`, or `libaom-av1` if SVT-AV1 is missing (CPU) |
-| `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | The NVENC encoder; falls back to the CPU encoder of the same family, with a note, if it does not work here |
+| `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | NVIDIA NVENC |
+| `h264_vaapi`, `hevc_vaapi`, `av1_vaapi` | VAAPI on the render node chosen (an AMD one first; `VUPSCALE_VAAPI_DEVICE` overrides) |
+
+An explicit hardware encoder that does not work here falls back to the CPU encoder of
+the same family, with a note.
 
 HEVC files are roughly a third smaller than H.264 at similar quality, but some browsers
 and older editors cannot open them. HEVC in `.mp4` / `.mov` is tagged `hvc1` so that
@@ -98,9 +107,11 @@ Apple devices play it.
 ### Quality
 
 `--quality` (alias `--crf`) runs from 0 to 51; lower is better and larger. The default
-is 20. It maps to CRF for CPU encoders and to constant-quality (`-cq`, VBR) for NVENC.
-The two scales are similar but not identical, so the same number gives somewhat
-different sizes on NVENC and on x264.
+is 20. It maps to CRF for CPU encoders, to constant-quality (`-cq`, VBR) for NVENC, and to
+a constant quantiser (`-rc_mode CQP`) for VAAPI, scaled to 0-255 for AV1. The scales are
+similar but not identical, so the same number gives different sizes on each encoder.
+Constant QP does not adapt to the content the way CRF does, so VAAPI files tend to be
+larger at the same number.
 
 As a rule of thumb, adding 6 roughly halves the file size.
 
@@ -117,6 +128,7 @@ ls -lh sample.mp4      # final size ~ sample size x (total frames / 600)
 | Encoder | Setting |
 |---|---|
 | NVENC | preset `p5`, `-tune hq` |
+| VAAPI | driver defaults |
 | `libx264`, `libx265` | preset `faster` on machines with 4 cores or fewer, otherwise `medium` |
 | `libsvtav1` | preset 8 on 4 cores or fewer, otherwise 6 |
 

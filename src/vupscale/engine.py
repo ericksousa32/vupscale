@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import math
+import os
 import time
 import warnings
 from pathlib import Path
@@ -27,6 +28,30 @@ from .tuning import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.environ.get(name, "").strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+def backend_defaults(device: torch.device) -> tuple[bool, bool]:
+    """(channels_last, cudnn_benchmark) for this device.
+
+    Both are measured wins on NVIDIA. On AMD (ROCm) they are off by default: MIOpen is
+    most tuned for the NCHW layout, and its benchmark mode runs an exhaustive kernel
+    search for every new shape, which calibration produces many of. Override with
+    ``VUPSCALE_CHANNELS_LAST`` and ``VUPSCALE_CUDNN_BENCHMARK`` (1 or 0) to measure.
+    """
+    rocm = device.type == "cuda" and getattr(torch.version, "hip", None) is not None
+    return (
+        _env_flag("VUPSCALE_CHANNELS_LAST", not rocm),
+        _env_flag("VUPSCALE_CUDNN_BENCHMARK", device.type == "cuda" and not rocm),
+    )
 
 
 def load_model(path: str | Path) -> Any:
@@ -126,9 +151,11 @@ class UpscaleEngine:
         # synchronises the GPU between stages, so leave it off for real renders.
         self.timings: dict[str, float] | None = None
 
+        self.channels_last, self.cudnn_benchmark = backend_defaults(self.device)
+        self._layout = torch.channels_last if self.channels_last else torch.contiguous_format
         descriptor.eval()
         descriptor.to(self.device, dtype)
-        self._model = descriptor.model.to(memory_format=torch.channels_last)
+        self._model = descriptor.model.to(memory_format=self._layout)
         self._call_fn: Callable[[Any, torch.Tensor], torch.Tensor] = getattr(
             descriptor, "_call_fn", lambda model, x: model(x)
         )
@@ -141,7 +168,7 @@ class UpscaleEngine:
         self._compiled_warm = False
         self._ramps: dict[tuple[int, int, bool, bool], torch.Tensor] = {}
         if self.device.type == "cuda":
-            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.benchmark = self.cudnn_benchmark
 
     # ------------------------------------------------------------------ setup
 
@@ -197,7 +224,7 @@ class UpscaleEngine:
             rest = (0, pad_w - reflect[1], 0, pad_h - reflect[3])
             if rest[1] or rest[3]:
                 x = F.pad(x, rest, mode="replicate")
-        x = x.contiguous(memory_format=torch.channels_last)
+        x = x.contiguous(memory_format=self._layout)
 
         if self._compiled is not None:
             if n < self._fixed_units:  # keep the compiled shape: repeat the last item

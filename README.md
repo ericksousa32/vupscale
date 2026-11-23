@@ -15,6 +15,9 @@ PyTorch is not pinned, so on Google Colab and RunPod the pre-installed build is 
 and nothing heavy is downloaded. FFmpeg must be on the `PATH`
 (`bash scripts/setup_cloud.sh` installs it when missing).
 
+GPUs: NVIDIA through CUDA, and AMD Radeon RDNA 2 or newer on Linux through ROCm. For AMD,
+install the ROCm build of PyTorch first; see [docs/amd.md](docs/amd.md).
+
 ## Usage
 
 Only the input and the model are required. Everything else is auto-tuned.
@@ -67,6 +70,7 @@ Full documentation lives in [docs/](docs/README.md):
 [models](docs/models.md) ·
 [video options](docs/video.md) ·
 [checkpoints](docs/checkpoints.md) ·
+[AMD GPUs](docs/amd.md) ·
 [auto-tuning](docs/auto-tuning.md) ·
 [performance](docs/performance.md) ·
 [architecture](docs/architecture.md) ·

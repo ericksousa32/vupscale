@@ -12,7 +12,7 @@ detected) and what the model declares about itself through spandrel.
 |---|---|
 | CPU | fp32 |
 | GPU, model supports half precision | fp16 |
-| GPU from the Ampere generation on, model supports bf16 but not fp16 | bf16 |
+| GPU with bf16 hardware (NVIDIA Ampere and newer, AMD RDNA 3 and newer), model supports bf16 but not fp16 | bf16 |
 | Otherwise | fp32 |
 
 fp16 is preferred over bf16 everywhere, including on recent GPUs: it keeps 10 bits of
@@ -95,14 +95,15 @@ This also applies with `--tile-size -1`: tiling is enabled rather than aborting.
 
 ## Codec
 
-See [Video options](video.md#codec). In short: NVENC when a real test encode works,
-H.264 up to 4096 px and HEVC above.
+See [Video options](video.md#codec). In short: NVENC, then VAAPI, when a real test encode
+works at the output resolution; H.264 up to 4096 px and HEVC above.
 
 ## torch.compile
 
 With `--compile auto`, the model is compiled when all of these hold:
 
-- the GPU is from the Ampere generation or newer (compute capability 8.0+), and
+- the GPU is an NVIDIA one from the Ampere generation or newer (compute capability
+  8.0+); on AMD it stays off until measured, and `--compile on` enables it, and
 - the job has at least 1500 frames, so the compile time is paid back.
 
 Compilation uses `max-autotune-no-cudagraphs` with fixed shapes; the last, smaller batch
@@ -112,6 +113,11 @@ the render continues uncompiled and says so.
 Measured on an RTX 4090 with `realesr-animevideov3`, compiling made the model 31% faster.
 It has not been measured on the larger ESRGAN models. The first batch takes noticeably
 longer while the model compiles.
+
+## AMD GPUs
+
+On ROCm the same calibration and recovery run unchanged. The memory layout and kernel
+autotuning defaults differ; see [AMD GPUs](amd.md#what-is-different-on-amd).
 
 ## Without a GPU
 

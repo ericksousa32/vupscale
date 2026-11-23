@@ -41,6 +41,9 @@ class Codec(str, Enum):
     h264_nvenc = "h264_nvenc"
     hevc_nvenc = "hevc_nvenc"
     av1_nvenc = "av1_nvenc"
+    h264_vaapi = "h264_vaapi"
+    hevc_vaapi = "hevc_vaapi"
+    av1_vaapi = "av1_vaapi"
 
 
 class OptionsError(ValueError):

@@ -3,7 +3,7 @@
 vupscale upscales videos with PyTorch super-resolution models. Frames stream from FFmpeg
 to the GPU and back to FFmpeg through pipes, so no image files are written to disk, and
 the batch size, tiling, precision and codec are tuned automatically for the machine it
-runs on.
+runs on. NVIDIA GPUs (CUDA) and AMD GPUs (ROCm, on Linux) are supported.
 
 ```bash
 vupscale video.mp4 -m realesrgan-x4
@@ -19,6 +19,7 @@ vupscale video.mp4 -m realesrgan-x4
 | [Models](models.md) | Built-in aliases, your own checkpoints, choosing a model |
 | [Video options](video.md) | Frame selection, output size, codecs, quality, audio, colour |
 | [Checkpoints and resume](checkpoints.md) | Surviving disconnects on long renders |
+| [AMD GPUs](amd.md) | Running on Radeon RDNA 2 to RDNA 4 under Linux: setup, defaults, tuning |
 | [Troubleshooting](troubleshooting.md) | Common errors and known limitations |
 
 ## Understanding vupscale

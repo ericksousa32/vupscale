@@ -45,13 +45,15 @@ The suite needs no downloads and no GPU. Everything it uses is generated on the 
 | `test_engine.py` | Inference against a direct model call, tiling, resize, padding, compile fallback |
 | `test_video_io.py` | Probing, exact frame selection, colours, writer, audio, segment joining |
 | `test_pipeline.py` | End-to-end renders, checkpoints, resume after crash and Ctrl+C, damaged segments |
+| `test_amd.py` | AMD identity, precision, compile, VAAPI encoder choice and command, render node, doctor hints |
 | `test_fixtures.py` | That the fixtures are what they claim to be |
 
 ### Testing GPU logic without a GPU
 
 Tuning code takes its hardware facts as arguments, so tests pass in fake ones:
 
-- `GpuInfo("Tesla T4", (7, 5), 14.6, 14.5)` stands in for a detected GPU.
+- `GpuInfo("Tesla T4", (7, 5), 14.6, 14.5)` stands in for a detected GPU, and
+  `GpuInfo("AMD Radeon RX 9060 XT", (12, 0), 15.9, 15.5, "amd", "gfx1200")` for an AMD one.
 - `FakeGpu` in `test_tuning.py` is a probe with a simple memory model that raises
   `torch.cuda.OutOfMemoryError` above its capacity. Calibration runs against it.
 - Encoder availability is injected as a function (`works=`).
@@ -61,8 +63,8 @@ chosen calls.
 
 ### What the tests cannot cover
 
-No test runs on CUDA. Pinned memory, fp16, real VRAM measurement and NVENC are only
-checked by hand. After changing `engine.py` or `tuning.py`, verify on a GPU:
+No test runs on CUDA or ROCm. Pinned memory, fp16, real VRAM measurement, NVENC and
+VAAPI are only checked by hand. After changing `engine.py` or `tuning.py`, verify on a GPU:
 
 ```bash
 vupscale doctor

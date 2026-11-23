@@ -5,7 +5,8 @@
 - Python 3.10 or newer
 - PyTorch (any recent build; a CUDA build for GPU rendering)
 - FFmpeg and ffprobe on the `PATH`
-- An NVIDIA GPU is strongly recommended. CPU rendering works but is very slow.
+- A GPU is strongly recommended: NVIDIA (CUDA), or AMD Radeon RDNA 2 or newer on Linux
+  (ROCm; see [AMD GPUs](amd.md)). CPU rendering works but is very slow.
 
 ## Install
 
@@ -43,6 +44,11 @@ On Ubuntu 24.04 images pip may refuse with `externally-managed-environment`; add
 For long renders, run inside `tmux` so that closing the browser tab does not kill the
 job, and attach a volume at `/workspace` so files survive the pod.
 
+### Local machine with an AMD GPU
+
+Install the ROCm build of PyTorch and FFmpeg with VAAPI first; [AMD GPUs](amd.md)
+walks through it. Then install vupscale as above and run `vupscale doctor`.
+
 ### From a clone
 
 ```bash
@@ -58,7 +64,7 @@ vupscale doctor
 ```
 
 `doctor` prints the detected environment, GPU, memory, FFmpeg version and which encoders
-work. Encoders are tested with a real one-frame encode, because FFmpeg lists NVENC
+work. Encoders are tested with a real one-frame encode, because FFmpeg lists hardware
 encoders even on GPUs that cannot use them. It exits with an error only when something
 required is missing (FFmpeg, ffprobe, PyTorch or an H.264 encoder).
 

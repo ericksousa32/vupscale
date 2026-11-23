@@ -128,7 +128,9 @@ def upscale(
     ),
     # encoding
     codec: Codec = typer.Option(
-        Codec.auto, help="auto = NVENC when it really works, else CPU.", rich_help_panel=ENC
+        Codec.auto,
+        help="auto = NVENC or VAAPI when it really works, else CPU.",
+        rich_help_panel=ENC,
     ),
     quality: int = typer.Option(
         20,
@@ -218,7 +220,7 @@ def upscale(
 @app.command()
 def doctor() -> None:
     """Show the detected environment, GPU, FFmpeg and which encoders really work."""
-    from .hardware import CPU_ENCODERS, NVENC_ENCODERS, collect_report
+    from .hardware import CPU_ENCODERS, NVENC_ENCODERS, VAAPI_ENCODERS, collect_report
 
     console = get_console()
     with console.status("probing hardware and encoders..."):
@@ -233,14 +235,17 @@ def doctor() -> None:
     table.add_row("environment", report.environment)
     table.add_row("python", report.python)
     torch_text = report.torch or "[red]not installed[/red]"
-    if report.torch and report.cuda_build:
+    if report.torch and report.rocm_build:
+        torch_text += f" (ROCm {report.rocm_build})"
+    elif report.torch and report.cuda_build:
         torch_text += f" (CUDA {report.cuda_build})"
     table.add_row("torch", torch_text)
     if report.gpu:
         gpu = report.gpu
-        major, minor = gpu.compute_cap
-        table.add_row("gpu", f"{gpu.name} ({gpu.generation}, sm_{major}{minor})")
+        table.add_row("gpu", f"{gpu.name} ({gpu.generation}, {gpu.label})")
         table.add_row("vram", f"{gpu.vram_free_gb:.1f} GB free of {gpu.vram_total_gb:.1f} GB")
+        check = "[green]ok[/green]" if not report.gpu_error else "[red]failed[/red]"
+        table.add_row("gpu compute", check)
     else:
         table.add_row("gpu", "[yellow]none (CPU only)[/yellow]")
     table.add_row("cpu", f"{report.cpu_count} cores")
@@ -255,6 +260,15 @@ def doctor() -> None:
                 f"{e.removesuffix('_nvenc')}: {mark(report.encoders[e])}" for e in NVENC_ENCODERS
             ),
         )
+        if report.vaapi or (report.gpu and report.gpu.is_amd):
+            table.add_row(
+                "vaapi (tested)",
+                "  ".join(
+                    f"{e.removesuffix('_vaapi')}: {mark(report.encoders[e])}"
+                    for e in VAAPI_ENCODERS
+                )
+                + f"  [dim]{report.vaapi or 'no render node'}[/dim]",
+            )
         table.add_row(
             "cpu encoders",
             "  ".join(f"{e}: {mark(report.encoders[e])}" for e in CPU_ENCODERS),

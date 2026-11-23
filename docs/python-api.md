@@ -25,7 +25,7 @@ It returns the output path, or a list of paths when `input` matches several vide
 
 Option names map directly: `--target-height 2160` becomes `target_height=2160`,
 `--no-audio` becomes `no_audio=True`, `--checkpoint-dir` becomes `checkpoint_dir=...`.
-Choices can be passed as strings (`precision="fp16"`, `codec="hevc_nvenc"`).
+Choices can be passed as strings (`precision="fp16"`, `codec="hevc_vaapi"`).
 
 Progress is printed with Rich and renders correctly inside Jupyter and Colab cells.
 

@@ -79,8 +79,8 @@ These follow the ComfyUI VideoHelperSuite options and are applied in this order.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--codec` | `auto` | `auto`, `h264`, `hevc`, `av1` (CPU encoders) or `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` |
-| `--quality`, `--crf` | `20` | 0 to 51, lower is better and larger. CRF on CPU encoders, constant quality (`-cq`) on NVENC |
+| `--codec` | `auto` | `auto`; `h264`, `hevc`, `av1` (CPU encoders); `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` (NVIDIA); `h264_vaapi`, `hevc_vaapi`, `av1_vaapi` (AMD and Intel on Linux) |
+| `--quality`, `--crf` | `20` | 0 to 51, lower is better and larger. CRF on CPU encoders, constant quality (`-cq`) on NVENC, constant QP on VAAPI |
 | `--pix-fmt` | `yuv420p` | Output pixel format |
 | `--no-audio` | off | Do not copy the audio track |
 
@@ -108,12 +108,18 @@ See [Checkpoints and resume](checkpoints.md).
 vupscale doctor
 ```
 
-Prints environment (`colab`, `runpod` or `local`), Python and PyTorch versions, GPU name
-and generation, free VRAM and RAM, CPU cores, FFmpeg version, and the result of a real
-test encode for each NVENC and CPU encoder. The `codec auto` row shows what
+Prints environment (`colab`, `runpod` or `local`), Python and PyTorch versions (with the
+CUDA or ROCm version), GPU name, generation and architecture (`sm_89`, `gfx1200`), free
+VRAM and RAM, the result of a small test convolution on the GPU, CPU cores, FFmpeg
+version, and the result of a real test encode for each NVENC, VAAPI and CPU encoder. The
+VAAPI row, with the render node used, appears on machines with an AMD GPU or a render
+node. The `codec auto` row shows what
 `--codec auto` resolves to for outputs up to 4096 px wide and for larger ones.
 
-Exits with code 1 when FFmpeg, ffprobe, PyTorch or a working H.264 encoder is missing.
+Exits with code 1 when FFmpeg, ffprobe, PyTorch or a working H.264 encoder is missing, or
+when the test convolution fails. Warnings explain common AMD setup problems: a CUDA
+build of PyTorch on an AMD machine, missing `render`/`video` group membership, and RDNA 2
+cards that need `HSA_OVERRIDE_GFX_VERSION`.
 
 ## models
 
@@ -150,3 +156,6 @@ FFmpeg are needed. See [Performance](performance.md#vupscale-bench).
 | Variable | Meaning |
 |---|---|
 | `VUPSCALE_CACHE_DIR` | Where models and calibration results are cached. Default `~/.cache/vupscale` |
+| `VUPSCALE_VAAPI_DEVICE` | Render node for VAAPI encoding, e.g. `/dev/dri/renderD129` |
+| `VUPSCALE_CHANNELS_LAST` | `1` or `0`: memory layout for the model. See [AMD GPUs](amd.md#tuning-on-your-card) |
+| `VUPSCALE_CUDNN_BENCHMARK` | `1` or `0`: cuDNN / MIOpen kernel autotuning. See [AMD GPUs](amd.md#tuning-on-your-card) |

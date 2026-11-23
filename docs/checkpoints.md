@@ -64,8 +64,9 @@ Otherwise the result would be a video stitched from mismatched pieces.
 These can change freely between runs: batch size, tiling, precision, `torch.compile`,
 `--no-audio`, and the output path.
 
-The encoder must match exactly, including NVENC versus CPU. If you may resume on a
-machine without NVENC (an A100, for example), start the job with a CPU codec such as
+The encoder must match exactly, including hardware (NVENC, VAAPI) versus CPU. If you may
+resume on a machine without the same hardware encoder (an A100, or a different GPU
+vendor), start the job with a CPU codec such as
 `--codec hevc` so that both machines can produce it.
 
 ## Without `--resume`

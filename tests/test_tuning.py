@@ -64,7 +64,7 @@ def all_work(_: str) -> bool:
 
 
 def none_work(encoder: str) -> bool:
-    return not encoder.endswith("_nvenc")
+    return not encoder.endswith(("_nvenc", "_vaapi"))
 
 
 # ------------------------------------------------------------------ sizes

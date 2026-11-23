@@ -25,7 +25,7 @@ from typing import Any
 import numpy as np
 
 from .config import UpscaleOptions, compute_input_size
-from .hardware import ffmpeg_version
+from .hardware import encoder_input_args, encoder_upload_filter, ffmpeg_version
 
 _QUIET = ["-hide_banner", "-loglevel", "error", "-nostdin"]
 _SWS_FLAGS = "accurate_rnd+full_chroma_int"
@@ -462,7 +462,12 @@ def audio_codec_args(source_codec: str, container: str) -> list[str]:
 def encoder_args(encoder: str, preset: str, quality: int, container: str = ".mp4") -> list[str]:
     """Rate control and speed settings for each supported encoder."""
     args = ["-c:v", encoder]
-    if encoder.endswith("_nvenc"):
+    if encoder.endswith("_vaapi"):
+        # Constant QP: the closest VAAPI equivalent of CRF that AMD's driver supports.
+        # AV1 quantisers run 0-255 instead of 0-51.
+        qp = round(quality * 255 / 51) if encoder.startswith("av1") else quality
+        args += ["-rc_mode", "CQP", "-global_quality", str(qp)]
+    elif encoder.endswith("_nvenc"):
         args += ["-preset", preset or "p5", "-tune", "hq", "-rc", "vbr", "-cq", str(quality)]
         args += ["-b:v", "0"]
     elif encoder == "libaom-av1":
@@ -471,7 +476,8 @@ def encoder_args(encoder: str, preset: str, quality: int, container: str = ".mp4
         args += ["-crf", str(quality), "-preset", preset or "medium"]
         if encoder == "libx265":
             args += ["-x265-params", "log-level=error"]
-    if encoder in ("libx265", "hevc_nvenc") and container.lower() in (".mp4", ".mov", ".m4v"):
+    hevc = encoder in ("libx265", "hevc_nvenc", "hevc_vaapi")
+    if hevc and container.lower() in (".mp4", ".mov", ".m4v"):
         args += ["-tag:v", "hvc1"]  # required for playback on Apple devices
     return args
 
@@ -531,7 +537,7 @@ class VideoStreamWriter:
 
     def command(self) -> list[str]:
         suffix = self.output.suffix
-        cmd = [_require("ffmpeg"), *_QUIET, "-y"]
+        cmd = [_require("ffmpeg"), *_QUIET, "-y", *encoder_input_args(self.encoder)]
         cmd += ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{self.width}x{self.height}"]
         cmd += ["-r", _fps_text(self.fps), "-i", "pipe:0", *_audio_inputs(self.audio)]
         cmd += ["-map", "0:v:0"]
@@ -540,7 +546,7 @@ class VideoStreamWriter:
         chain = f"scale=flags={_SWS_FLAGS}:out_color_matrix=bt709:out_range=tv"
         if self.width % 2 or self.height % 2:
             chain = f"pad=ceil(iw/2)*2:ceil(ih/2)*2,{chain}"
-        cmd += ["-vf", f"{chain},format={self.pix_fmt}"]
+        cmd += ["-vf", f"{chain},{encoder_upload_filter(self.encoder, self.pix_fmt)}"]
         cmd += encoder_args(self.encoder, self.preset, self.quality, suffix)
         cmd += ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
         cmd += ["-color_range", "tv"]

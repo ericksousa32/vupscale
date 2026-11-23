@@ -12,7 +12,7 @@ pipeline.
 | `cli.py` | Typer commands. Translates arguments into `UpscaleOptions` and errors into exit codes |
 | `__init__.py` | `upscale_video()`, the Python entry point |
 | `models.py` | Alias catalog, model resolution, cached atomic downloads |
-| `hardware.py` | What the machine is: environment, GPU, RAM, FFmpeg, real encoder tests |
+| `hardware.py` | What the machine is: environment, GPU vendor and architecture, RAM, FFmpeg, VAAPI render node, real encoder tests |
 | `tuning.py` | How to run on it: precision, codec, calibration, `RuntimeConfig`, out-of-memory recovery |
 | `engine.py` | Model loading and inference: uint8 transfer, tiling, resize, `torch.compile` |
 | `video_io.py` | ffprobe metadata, decode planning, threaded FFmpeg reader and writer, segment joining |
@@ -134,5 +134,9 @@ Choices that are not obvious from the code, and why they were made.
 | `--every-nth` divides the frame rate | Duration and audio sync are preserved, as in VideoHelperSuite |
 | Audio is trimmed explicitly, never with `-shortest` | `-shortest` lets a short audio track truncate the video |
 | Segments are cut by processing time | A fixed frame count means seconds of work with one model and half an hour with another |
-| NVENC is detected with a real encode | FFmpeg lists NVENC encoders on GPUs that cannot use them |
+| Hardware encoders are detected with a real encode at the output size | FFmpeg lists encoders the GPU cannot use, and size limits differ by chip |
+| AMD runs through PyTorch's `torch.cuda` interface | ROCm builds expose AMD GPUs there; only decisions that read the GPU's identity need to know the vendor |
+| GPU features are read from vendor and architecture, not from the capability number | ROCm reports the gfx target as the capability: an RDNA 4 card reads as (12, 0), like a Blackwell |
+| AMD encodes through VAAPI, not AMF | On Linux, AMF does not support RDNA 3 or RDNA 4 |
+| `channels_last` and MIOpen exhaustive search off on AMD | Unmeasured; NCHW is MIOpen's best-tuned layout and exhaustive search is slow for many shapes. Switchable by environment variable |
 | No NVDEC decoding | Not needed so far; worth revisiting if `limit: decode` shows up in practice |

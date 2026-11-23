@@ -27,9 +27,33 @@ the installed PyTorch is a CUDA build (`python -c "import torch; print(torch.ver
 Either FFmpeg was missing when the test ran, or the GPU has no NVENC hardware. A100 and
 H100 cards have none, and a T4 has no AV1. vupscale then encodes on the CPU.
 
-**`h264_nvenc is limited to 4096 px, switching to HEVC`**
+**`h264_nvenc is limited to 4096 px, switching to HEVC`** (or `h264_vaapi`)
 Expected for outputs wider than 4096 px. Use `--target-height` for a smaller output if
 you need H.264.
+
+## AMD GPUs
+
+See [AMD GPUs](amd.md) for setup.
+
+**`an AMD GPU is present but this PyTorch build has no ROCm support`**
+`pip install torch` installed the CUDA build. Uninstall it and install the ROCm build.
+
+**`no permission to use the AMD GPU`**
+Add your user to the `render` and `video` groups and log in again.
+
+**`the GPU is visible but a test convolution failed`**
+The installed ROCm build has no kernels for this GPU. On RDNA 2 cards other than the
+RX 6800/6900, set `HSA_OVERRIDE_GFX_VERSION=10.3.0`. Otherwise install a ROCm version
+that lists your card. Errors such as `invalid device function` during a render have the
+same cause.
+
+**`no working VAAPI encoder`**
+Check `vainfo`. On Fedora, install `mesa-va-drivers-freeworld` from RPM Fusion; on
+Ubuntu, `mesa-va-drivers`. With several GPUs, set `VUPSCALE_VAAPI_DEVICE` to the right
+`/dev/dri/renderD*` node. Rendering still works, with CPU encoding.
+
+**The first run is much slower than later ones**
+MIOpen compiles its kernels on first use and caches them.
 
 ## Memory
 
@@ -68,7 +92,7 @@ aspect ratio is not carried over. Resize to square pixels first with `--pre-widt
 `--pre-height`.
 
 **The file does not open in a browser or editor**
-It may be HEVC. Use `--codec h264_nvenc` or `--codec h264`, and keep the output at most
+It may be HEVC. Use `--codec h264_nvenc`, `--codec h264_vaapi` or `--codec h264`, and keep the output at most
 4096 px wide.
 
 **The file is larger than expected**
@@ -97,7 +121,8 @@ The message lists what differs. Restore those settings, or use an empty director
 Renaming the input file also counts as a change.
 
 **Resuming on a different machine is refused because of the encoder**
-`--codec auto` picked NVENC on one machine and a CPU encoder on the other. Start jobs
+`--codec auto` picked a hardware encoder (NVENC or VAAPI) on one machine and a different
+one on the other. Start jobs
 that may move between machines with an explicit CPU codec, such as `--codec hevc`.
 
 **The job finished, but running it again re-renders everything**
@@ -112,6 +137,7 @@ Run long jobs inside `tmux` (or `screen`), and use `--checkpoint-dir` with `--re
 ## Known limitations
 
 - One GPU is used; multi-GPU rendering is not supported.
+- AMD GPUs are supported on Linux only.
 - Only RGB models (3 channels in and out).
 - Output is 8-bit SDR, BT.709.
 - HDR input is not tone-mapped.

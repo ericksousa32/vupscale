@@ -37,8 +37,9 @@ MAX_BATCH = 16
 MAX_QUEUE_DEPTH = 8
 VRAM_SAFETY = 0.75  # use at most 75% of the free VRAM (25% margin)
 RAM_FRACTION = 0.15  # raw frames waiting in queues may use 15% of the free host RAM
-H264_NVENC_MAX = 4096
-HEVC_NVENC_MAX = 8192
+H264_HW_MAX = 4096  # widest frame H.264 hardware encoders accept (NVENC and AMD VCN)
+HEVC_HW_MAX = 8192
+HW_BACKENDS = ("nvenc", "vaapi")  # tried in this order by --codec auto
 COMPILE_MIN_FRAMES = 1500
 
 # (units, tile_size) -> peak bytes. ``units`` are whole frames when ``tile_size`` is None,
@@ -149,8 +150,13 @@ def select_dtype(
     device_type: str,
     compute_cap: tuple[int, int],
     traits: ModelTraits,
+    *,
+    native_bf16: bool | None = None,
 ) -> tuple[torch.dtype, list[str]]:
-    """fp16 where the model supports it, then bf16 (Ampere+), then fp32.
+    """fp16 where the model supports it, then bf16 (where the GPU runs it natively), then fp32.
+
+    ``native_bf16`` comes from ``GpuInfo.native_bf16``; without it the NVIDIA rule
+    (compute capability 8.0+) is applied to ``compute_cap``.
 
     fp16 has 10 mantissa bits against 7 for bf16 (less banding) at the same speed, so bf16
     is only the fallback for models that overflow in fp16.
@@ -163,7 +169,8 @@ def select_dtype(
             notes.append(f"precision {precision.value} ignored on CPU, using fp32")
         return torch.float32, notes
 
-    native_bf16 = compute_cap[0] >= 8
+    if native_bf16 is None:
+        native_bf16 = compute_cap[0] >= 8
     if precision is Precision.auto:
         if traits.supports_half:
             return torch.float16, notes
@@ -192,8 +199,8 @@ class EncoderChoice:
     notes: tuple[str, ...] = ()
 
     @property
-    def is_nvenc(self) -> bool:
-        return self.encoder.endswith("_nvenc")
+    def is_hardware(self) -> bool:
+        return self.encoder.endswith(tuple(f"_{backend}" for backend in HW_BACKENDS))
 
 
 def select_encoder(
@@ -205,8 +212,9 @@ def select_encoder(
 ) -> EncoderChoice:
     """Pick the ffmpeg encoder for the OUTPUT resolution.
 
-    ``auto`` prefers NVENC when a real test encode succeeds (A100/H100 have no NVENC) and
-    switches to HEVC above 4096 px, the limit of H.264 NVENC.
+    ``auto`` uses the first hardware encoder whose real test encode succeeds: NVENC, then
+    VAAPI (AMD and Intel on Linux), then the CPU. It switches to HEVC above 4096 px, the
+    limit of H.264 encoders on both NVIDIA and AMD hardware.
     """
     notes: list[str] = []
     longest = max(width, height)
@@ -225,31 +233,46 @@ def select_encoder(
         return cpu(codec.value)
 
     explicit = codec is not Codec.auto
-    family = codec.value.removesuffix("_nvenc") if explicit else "h264"
-    if family == "h264" and longest > H264_NVENC_MAX:
-        if explicit:
-            notes.append(f"h264_nvenc is limited to {H264_NVENC_MAX} px, switching to HEVC")
-        family = "hevc"
-    if longest > HEVC_NVENC_MAX:
-        notes.append(f"output above {HEVC_NVENC_MAX} px exceeds NVENC limits, encoding on CPU")
-        return cpu(family)
-    encoder = f"{family}_nvenc"
-    if works(encoder):
-        return EncoderChoice(encoder, "p5", tuple(notes))
     if explicit:
-        notes.append(f"{encoder} does not work on this machine, encoding on CPU instead")
+        family, backend = codec.value.split("_", 1)
+        backends: tuple[str, ...] = (backend,)
+    else:
+        family, backends = "h264", HW_BACKENDS
+    if family == "h264" and longest > H264_HW_MAX:
+        if explicit:
+            notes.append(f"{codec.value} is limited to {H264_HW_MAX} px, switching to HEVC")
+        family = "hevc"
+    if longest > HEVC_HW_MAX:
+        notes.append(f"output above {HEVC_HW_MAX} px exceeds hardware encoder limits, using CPU")
+        return cpu(family)
+    for backend in backends:
+        encoder = f"{family}_{backend}"
+        if works(encoder):
+            return EncoderChoice(encoder, "p5" if backend == "nvenc" else "", tuple(notes))
+    if explicit:
+        notes.append(f"{family}_{backends[0]} does not work on this machine, encoding on CPU")
     return cpu(family)
 
 
 def should_compile(
-    mode: CompileMode, device_type: str, compute_cap: tuple[int, int], total_frames: int
+    mode: CompileMode,
+    device_type: str,
+    compute_cap: tuple[int, int],
+    total_frames: int,
+    vendor: str = "nvidia",
 ) -> bool:
-    """``auto`` compiles only where it pays off: Ampere+ and enough frames to amortise it."""
+    """``auto`` compiles only where it is known to pay off: NVIDIA Ampere+ and enough
+    frames to amortise it. On AMD it stays opt-in (``--compile on``) until measured."""
     if mode is CompileMode.on:
         return True
     if mode is CompileMode.off:
         return False
-    return device_type == "cuda" and compute_cap[0] >= 8 and total_frames >= COMPILE_MIN_FRAMES
+    return (
+        device_type == "cuda"
+        and vendor == "nvidia"
+        and compute_cap[0] >= 8
+        and total_frames >= COMPILE_MIN_FRAMES
+    )
 
 
 # --------------------------------------------------------------------------- calibration
@@ -423,6 +446,8 @@ class RuntimeConfig:
     cpu_count: int
     calibrated: bool = False
     notes: list[str] = field(default_factory=list)
+    gpu_vendor: str = ""  # "nvidia", "amd", or "" on CPU
+    gpu_label: str = ""  # "sm_89", "gfx1200", or "" on CPU
 
     @property
     def precision_name(self) -> str:
@@ -446,7 +471,7 @@ def build_runtime_config(
     gpu: GpuInfo | None = _UNSET,
     ram_free_bytes: float | None = None,
     cpu_count: int | None = None,
-    works: Callable[[str], bool] = encoder_works,
+    works: Callable[[str], bool] | None = None,
     use_cache: bool = True,
 ) -> RuntimeConfig:
     """Resolve every ``auto`` in ``options`` for a video of ``width`` x ``height``.
@@ -471,12 +496,24 @@ def build_runtime_config(
     device = torch.device("cuda" if on_gpu else "cpu")
     compute_cap = gpu.compute_cap if on_gpu and gpu else (0, 0)
 
-    dtype, dtype_notes = select_dtype(options.precision, device.type, compute_cap, traits)
+    dtype, dtype_notes = select_dtype(
+        options.precision,
+        device.type,
+        compute_cap,
+        traits,
+        native_bf16=gpu.native_bf16 if on_gpu and gpu else None,
+    )
     notes += dtype_notes
 
     out_w, out_h = compute_output_size(
         width, height, traits.scale, options.out_scale, options.target_height
     )
+    if works is None:
+
+        def works(encoder: str) -> bool:
+            # Hardware encoders are tested at the real output size: limits differ by chip.
+            return encoder_works(encoder, out_w, out_h)
+
     encoder = select_encoder(options.codec, out_w, out_h, cpu_count, works)
     notes += encoder.notes
 
@@ -544,7 +581,13 @@ def build_runtime_config(
         tile_size=tile_size,
         tile_overlap=options.tile_overlap,
         tile_batch=tile_batch,
-        compile_model=should_compile(options.compile, device.type, compute_cap, total_frames),
+        compile_model=should_compile(
+            options.compile,
+            device.type,
+            compute_cap,
+            total_frames,
+            vendor=gpu.vendor if on_gpu and gpu else "",
+        ),
         video_codec=encoder.encoder,
         encoder_preset=encoder.preset,
         queue_depth=queue_depth_for_ram(batch_size, frame_bytes, ram_free_bytes),
@@ -558,6 +601,8 @@ def build_runtime_config(
         cpu_count=cpu_count,
         calibrated=calibrated,
         notes=notes,
+        gpu_vendor=gpu.vendor if on_gpu and gpu else "",
+        gpu_label=gpu.label if on_gpu and gpu else "",
     )
 
 

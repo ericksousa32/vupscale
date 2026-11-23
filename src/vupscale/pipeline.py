@@ -134,7 +134,7 @@ def _summary(
     table.add_section()
     device = cfg.gpu_name
     if cfg.device.type == "cuda":
-        device += f" (sm_{cfg.compute_cap[0]}{cfg.compute_cap[1]}, {cfg.environment})"
+        device += f" ({cfg.gpu_label}, {cfg.environment})"
     table.add_row("device", device)
     table.add_row("precision", cfg.precision_name)
     table.add_row("batch size", str(cfg.batch_size))

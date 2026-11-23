@@ -27,7 +27,8 @@ The RTX 4090 was about 7 times faster than the T4 on both models.
 | Tesla T4 | `realesr-animevideov3` | 770x576 | 1926x1440, `h264_nvenc` | 15.0 fps |
 | Tesla T4 | `realesrgan-x2` | 770x576 | 1540x1152, `h264_nvenc` | about 1.9 fps |
 
-Complete renders have not yet been measured on an RTX 4090.
+Complete renders have not yet been measured on an RTX 4090. Nothing has been measured on
+AMD GPUs yet; [AMD GPUs](amd.md#tuning-on-your-card) lists the comparisons worth running.
 
 ## What drives the speed
 
@@ -93,7 +94,7 @@ The progress line ends with `limit:`, and the final line with `limited by`:
 |---|---|---|
 | `gpu` | The model is the slowest stage. This is the normal case | A lighter model, a smaller input (`--pre-height`), `--every-nth`, a faster GPU |
 | `decode` | The GPU is waiting for FFmpeg to supply frames | More CPU cores; a less demanding source codec |
-| `encode` | The encoder cannot keep up and its queue is full | NVENC instead of a CPU encoder; a smaller output; a faster preset |
+| `encode` | The encoder cannot keep up and its queue is full | A hardware encoder (NVENC, VAAPI) instead of a CPU one; a smaller output; a faster preset |
 
 It is derived from the queues between the stages: a full encode queue points at the
 encoder, an empty decode queue points at the decoder.
