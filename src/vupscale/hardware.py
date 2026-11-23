@@ -24,6 +24,9 @@ Vendor = Literal["nvidia", "amd"]
 NVENC_ENCODERS = ("h264_nvenc", "hevc_nvenc", "av1_nvenc")
 VAAPI_ENCODERS = ("h264_vaapi", "hevc_vaapi", "av1_vaapi")
 CPU_ENCODERS = ("libx264", "libx265", "libsvtav1", "libaom-av1")
+# doctor tests hardware encoders at a realistic size: AMD's encoders reject small frames
+# (seen on an RX 9060 XT: HEVC failed at 256x256 and worked at 5120x2880).
+DOCTOR_HW_SIZE = (1920, 1080)
 
 # PCI vendor ids, in order of preference for VAAPI encoding.
 _VAAPI_VENDORS = ("0x1002", "0x8086")  # AMD, Intel
@@ -321,7 +324,13 @@ def collect_report() -> SystemReport:
     vm = psutil.virtual_memory()
     has_ffmpeg = shutil.which("ffmpeg") is not None
     names = (*NVENC_ENCODERS, *VAAPI_ENCODERS, *CPU_ENCODERS)
-    encoders = {e: encoder_works(e) for e in names} if has_ffmpeg else {}
+    encoders = {}
+    if has_ffmpeg:
+        for name in names:
+            hardware = name in NVENC_ENCODERS or name in VAAPI_ENCODERS
+            encoders[name] = (
+                encoder_works(name, *DOCTOR_HW_SIZE) if hardware else encoder_works(name)
+            )
     gpu = gpu_info()
     kfd = Path("/dev/kfd")
     return SystemReport(

@@ -149,10 +149,8 @@ def _summary(
     if start_frame:
         frames += f"  (resuming at frame {start_frame})"
     table.add_row("frames", frames)
-    table.add_row(
-        "codec",
-        f"{cfg.video_codec} ({cfg.encoder_preset}, quality {options.quality}, {options.pix_fmt})",
-    )
+    settings = (cfg.encoder_preset, f"quality {options.quality}", options.pix_fmt)
+    table.add_row("codec", f"{cfg.video_codec} ({', '.join(s for s in settings if s)})")
     if audio is not None:
         table.add_row("audio", f"{meta.audio_codec} from the input")
     else:

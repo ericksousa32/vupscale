@@ -450,6 +450,15 @@ class RuntimeConfig:
     gpu_label: str = ""  # "sm_89", "gfx1200", or "" on CPU
 
     @property
+    def encoder_label(self) -> str:
+        """``hevc_nvenc (p5)``, or just ``hevc_vaapi`` for encoders without a preset."""
+        return (
+            f"{self.video_codec} ({self.encoder_preset})"
+            if self.encoder_preset
+            else self.video_codec
+        )
+
+    @property
     def precision_name(self) -> str:
         return {"float16": "fp16", "bfloat16": "bf16", "float32": "fp32"}.get(
             str(self.dtype).removeprefix("torch."), str(self.dtype)

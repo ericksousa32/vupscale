@@ -274,10 +274,14 @@ def doctor() -> None:
             "  ".join(f"{e}: {mark(report.encoders[e])}" for e in CPU_ENCODERS),
         )
         from .config import Codec
+        from .hardware import encoder_works
         from .tuning import select_encoder
 
-        hd = select_encoder(Codec.auto, 3840, 2160, report.cpu_count).encoder
-        big = select_encoder(Codec.auto, 7680, 4320, report.cpu_count).encoder
+        def auto_at(width: int, height: int) -> str:
+            works = lambda name: encoder_works(name, width, height)  # noqa: E731
+            return select_encoder(Codec.auto, width, height, report.cpu_count, works).encoder
+
+        hd, big = auto_at(3840, 2160), auto_at(7680, 4320)
         table.add_row("codec auto", f"{hd} (up to 4096 px), {big} (larger)")
     console.print(table)
 
@@ -364,7 +368,7 @@ def bench(
     table.add_row("tiling", tile)
     table.add_row("calibrated", "yes" if cfg.calibrated else "no (CPU or estimate)")
     table.add_row("torch.compile", "on" if engine._compiled is not None else "off")
-    table.add_row("codec (auto)", f"{cfg.video_codec} ({cfg.encoder_preset})")
+    table.add_row("codec (auto)", cfg.encoder_label)
     if cfg.device.type == "cuda":
         peak = torch.cuda.max_memory_allocated(cfg.device) / 2**30
         table.add_row("vram peak", f"{peak:.1f} GB of {cfg.vram_total_gb:.1f} GB")

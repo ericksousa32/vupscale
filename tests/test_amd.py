@@ -264,3 +264,35 @@ def test_doctor_on_nvidia_is_unchanged():
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
 def test_compute_check_on_a_real_gpu():
     assert hardware.gpu_compute_check() is None
+
+
+def test_doctor_tests_hardware_encoders_at_a_realistic_size(monkeypatch):
+    seen: dict[str, tuple] = {}
+
+    def fake_works(name, *size):
+        seen[name] = size
+        return True
+
+    monkeypatch.setattr(hardware, "encoder_works", fake_works)
+    monkeypatch.setattr(hardware.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(hardware, "gpu_info", lambda: None)
+    hardware.collect_report()
+    assert seen["hevc_vaapi"] == seen["h264_nvenc"] == hardware.DOCTOR_HW_SIZE
+    assert seen["libx264"] == ()  # CPU encoders have no size limits worth testing
+
+
+def test_encoder_label_omits_an_empty_preset():
+    cfg = build_runtime_config(
+        UpscaleOptions(input=Path("clip.mp4"), model="m.pth"),
+        ModelTraits(scale=2),
+        width=1280, height=720, gpu=RX9060XT, ram_free_bytes=24 * GB, cpu_count=12,
+        works=vaapi_only, use_cache=False,
+    )  # fmt: skip
+    assert cfg.encoder_label == "h264_vaapi"
+    cpu = build_runtime_config(
+        UpscaleOptions(input=Path("clip.mp4"), model="m.pth"),
+        ModelTraits(scale=2),
+        width=1280, height=720, gpu=None, ram_free_bytes=24 * GB, cpu_count=12,
+        works=lambda e: e.startswith("lib"), use_cache=False,
+    )  # fmt: skip
+    assert cpu.encoder_label == "libx264 (medium)"
