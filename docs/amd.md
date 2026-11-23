@@ -3,9 +3,9 @@
 vupscale runs on AMD Radeon GPUs under Linux, through the ROCm build of PyTorch for
 inference and VAAPI for hardware encoding.
 
-> **Status:** implemented and covered by tests with simulated AMD GPUs, but not yet
-> measured on AMD hardware. The defaults below are conservative; the
-> [tuning section](#tuning-on-your-card) explains how to check them on your card.
+> **Status:** tested on an RX 9060 XT (RDNA 4) under Linux: inference, calibration,
+> `torch.compile`, VAAPI encoding and complete renders. RDNA 2 and RDNA 3 are covered by
+> tests with simulated GPUs but have not been run on real cards.
 
 ## What is supported
 
@@ -96,9 +96,9 @@ The command line and the Python API are the same. These defaults differ:
 | Setting | NVIDIA | AMD | Why |
 |---|---|---|---|
 | Precision | fp16 | fp16 | Same rule. bf16 is the fallback only on RDNA 3 and newer, which have bf16 hardware |
-| `--compile auto` | On for long renders on Ampere and newer | Off | Not measured on AMD yet; `--compile on` enables it |
-| Memory layout | `channels_last` | Default (NCHW) | MIOpen, AMD's convolution library, is most tuned for NCHW |
-| Kernel autotuning | cuDNN benchmark on | MIOpen exhaustive search off | Exhaustive search runs for every new shape, and calibration produces many |
+| `--compile auto` | On for long renders on Ampere and newer | On for long renders on RDNA 4; off on RDNA 2 and 3 | Measured +32% on RDNA 4; RDNA 2 and 3 not measured, `--compile on` enables it |
+| Memory layout | `channels_last` | Default (NCHW) | Measured no gain on RDNA 4 |
+| Kernel autotuning | cuDNN benchmark on | MIOpen exhaustive search off | Measured no gain on RDNA 4, and exhaustive search runs for every new shape |
 | `--codec auto` | NVENC | VAAPI | Hardware encoder of each vendor on Linux |
 | `--quality` | NVENC constant quality | VAAPI constant QP | See [Video options](video.md#quality) |
 
@@ -108,6 +108,22 @@ work the same way.
 MIOpen compiles its kernels on first use and caches them (in `~/.cache/miopen` by
 default), so the first render or benchmark on a new card, or after a ROCm update, is
 slower than the following ones.
+
+## Measured on an RX 9060 XT
+
+Ubuntu 24.04 container on a Fedora host, PyTorch 2.15 for ROCm, FFmpeg 6.1,
+`realesr-animevideov3`, November 2026.
+
+| Test | Speed | Model time |
+|---|---|---|
+| `bench`, 1280x720 to 5120x2880, defaults | 17.6 fps | 45.7 ms/frame |
+| same, `VUPSCALE_CHANNELS_LAST=1` | 17.3 fps | 46.8 ms/frame |
+| same, `VUPSCALE_CUDNN_BENCHMARK=1` | 17.4 fps | 46.3 ms/frame |
+| same, `--compile on` | 23.3 fps | 31.4 ms/frame |
+| Complete render, 770x576 to 1926x1440, `h264_vaapi`, with audio | 21.4 fps | |
+
+The complete render was limited by the GPU, with `torch.compile` off (300 frames is too
+short for `auto` to compile). The same render on a Tesla T4 ran at 15.0 fps.
 
 ## Tuning on your card
 
@@ -140,4 +156,7 @@ compilation. They work on NVIDIA too, where both default to `1`.
 
 - Linux only.
 - Hardware decoding is not used (as on NVIDIA).
-- No measured speeds yet. Please share `vupscale bench` results from AMD cards.
+- Measured on one RDNA 4 card only. `vupscale bench` results from RDNA 2 and RDNA 3
+  cards would tell whether `torch.compile` should be on by default there too.
+- With `torch.compile`, PyTorch on recent ROCm may log a notice about "origami GEMM
+  selection"; vupscale hides it, and it does not affect the result.

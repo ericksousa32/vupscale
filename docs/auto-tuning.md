@@ -103,14 +103,16 @@ works at the output resolution; H.264 up to 4096 px and HEVC above.
 With `--compile auto`, the model is compiled when all of these hold:
 
 - the GPU is an NVIDIA one from the Ampere generation or newer (compute capability
-  8.0+); on AMD it stays off until measured, and `--compile on` enables it, and
+  8.0+), or an AMD RDNA 4 one; on RDNA 2 and RDNA 3 it stays off until measured, and
+  `--compile on` enables it, and
 - the job has at least 1500 frames, so the compile time is paid back.
 
 Compilation uses `max-autotune-no-cudagraphs` with fixed shapes; the last, smaller batch
 is padded so that nothing recompiles mid-render. If compilation fails for any reason,
 the render continues uncompiled and says so.
 
-Measured on an RTX 4090 with `realesr-animevideov3`, compiling made the model 31% faster.
+Measured with `realesr-animevideov3`, compiling made the model 31% faster on an RTX 4090
+and 32% faster on an RX 9060 XT.
 It has not been measured on the larger ESRGAN models. The first batch takes noticeably
 longer while the model compiles.
 

@@ -20,6 +20,10 @@ copy; expect it to be somewhat higher now.
 
 The RTX 4090 was about 7 times faster than the T4 on both models.
 
+On an RX 9060 XT, `realesr-animevideov3` ran at 17.6 fps from 1280x720 to 5120x2880
+(23.3 fps with `torch.compile`). Its input is a different size from the table above, so
+compare per frame with care.
+
 ### Complete renders (decode, upscale, encode)
 
 | GPU | Model | Input | Output | Speed |
@@ -27,8 +31,10 @@ The RTX 4090 was about 7 times faster than the T4 on both models.
 | Tesla T4 | `realesr-animevideov3` | 770x576 | 1926x1440, `h264_nvenc` | 15.0 fps |
 | Tesla T4 | `realesrgan-x2` | 770x576 | 1540x1152, `h264_nvenc` | about 1.9 fps |
 
-Complete renders have not yet been measured on an RTX 4090. Nothing has been measured on
-AMD GPUs yet; [AMD GPUs](amd.md#tuning-on-your-card) lists the comparisons worth running.
+| RX 9060 XT | `realesr-animevideov3` | 770x576 | 1926x1440, `h264_vaapi` | 21.4 fps |
+
+Complete renders have not yet been measured on an RTX 4090. AMD measurements, including
+the effect of each AMD-specific setting, are in [AMD GPUs](amd.md#measured-on-an-rx-9060-xt).
 
 ## What drives the speed
 

@@ -210,3 +210,17 @@ def test_stage_timings_are_collected_only_when_enabled(descriptor, frames):
     engine.process_batch(frames)
     assert {"upload", "model", "convert", "download"} <= set(engine.timings)
     assert all(v >= 0 for v in engine.timings.values()) and engine.timings["model"] > 0
+
+
+def test_quiet_compiler_restores_logging(caplog):
+    import logging
+
+    from vupscale.engine import _quiet_compiler
+
+    logger = logging.getLogger("torch._inductor")
+    before = logger.level
+    with _quiet_compiler():
+        assert logger.level == logging.ERROR
+        logger.warning("ROCm origami GEMM selection is not supported")
+    assert logger.level == before
+    assert "origami" not in caplog.text

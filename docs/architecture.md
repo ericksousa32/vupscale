@@ -138,5 +138,6 @@ Choices that are not obvious from the code, and why they were made.
 | AMD runs through PyTorch's `torch.cuda` interface | ROCm builds expose AMD GPUs there; only decisions that read the GPU's identity need to know the vendor |
 | GPU features are read from vendor and architecture, not from the capability number | ROCm reports the gfx target as the capability: an RDNA 4 card reads as (12, 0), like a Blackwell |
 | AMD encodes through VAAPI, not AMF | On Linux, AMF does not support RDNA 3 or RDNA 4 |
-| `channels_last` and MIOpen exhaustive search off on AMD | Unmeasured; NCHW is MIOpen's best-tuned layout and exhaustive search is slow for many shapes. Switchable by environment variable |
+| `channels_last` and MIOpen exhaustive search off on AMD | Measured no gain on an RX 9060 XT, and exhaustive search is slow for the many shapes calibration tries. Switchable by environment variable |
+| `torch.compile` auto on RDNA 4 but not RDNA 2/3 | +32% measured on RDNA 4; the older generations have not been measured |
 | No NVDEC decoding | Not needed so far; worth revisiting if `limit: decode` shows up in practice |

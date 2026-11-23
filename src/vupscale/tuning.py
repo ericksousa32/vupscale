@@ -260,19 +260,23 @@ def should_compile(
     compute_cap: tuple[int, int],
     total_frames: int,
     vendor: str = "nvidia",
+    arch: str = "",
 ) -> bool:
-    """``auto`` compiles only where it is known to pay off: NVIDIA Ampere+ and enough
-    frames to amortise it. On AMD it stays opt-in (``--compile on``) until measured."""
+    """``auto`` compiles only where it was measured to pay off, and only for jobs long
+    enough to amortise the compile time.
+
+    Measured: +31% on an RTX 4090 (Ampere+ rule), +32% on an RX 9060 XT (RDNA 4).
+    RDNA 2 and RDNA 3 stay opt-in (``--compile on``) until measured.
+    """
     if mode is CompileMode.on:
         return True
     if mode is CompileMode.off:
         return False
-    return (
-        device_type == "cuda"
-        and vendor == "nvidia"
-        and compute_cap[0] >= 8
-        and total_frames >= COMPILE_MIN_FRAMES
-    )
+    if device_type != "cuda" or total_frames < COMPILE_MIN_FRAMES:
+        return False
+    if vendor == "amd":
+        return arch.startswith("gfx12")
+    return compute_cap[0] >= 8
 
 
 # --------------------------------------------------------------------------- calibration
@@ -596,6 +600,7 @@ def build_runtime_config(
             compute_cap,
             total_frames,
             vendor=gpu.vendor if on_gpu and gpu else "",
+            arch=gpu.arch if on_gpu and gpu else "",
         ),
         video_codec=encoder.encoder,
         encoder_preset=encoder.preset,

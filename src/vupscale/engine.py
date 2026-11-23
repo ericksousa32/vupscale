@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
 import math
 import os
 import time
@@ -52,6 +53,26 @@ def backend_defaults(device: torch.device) -> tuple[bool, bool]:
         _env_flag("VUPSCALE_CHANNELS_LAST", not rocm),
         _env_flag("VUPSCALE_CUDNN_BENCHMARK", device.type == "cuda" and not rocm),
     )
+
+
+@contextlib.contextmanager
+def _quiet_compiler():
+    """Keep Inductor's autotune reports and backend notices off the screen.
+
+    They are informational (e.g. "ROCm origami GEMM selection is not supported") and
+    would land in the middle of the progress display.
+    """
+    loggers = [logging.getLogger(name) for name in ("torch._inductor", "torch._dynamo")]
+    levels = [logger.level for logger in loggers]
+    try:
+        for logger in loggers:
+            logger.setLevel(logging.ERROR)
+        with contextlib.redirect_stderr(io.StringIO()), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            yield
+    finally:
+        for logger, level in zip(loggers, levels, strict=True):
+            logger.setLevel(level)
 
 
 def load_model(path: str | Path) -> Any:
@@ -176,9 +197,10 @@ class UpscaleEngine:
         """Compile the model. Shapes are kept fixed (``fixed_units`` items per call) so it
         never recompiles mid-render; any compile failure falls back to eager mode."""
         try:
-            self._compiled = torch.compile(
-                self._model, mode="max-autotune-no-cudagraphs", dynamic=False
-            )
+            with _quiet_compiler():
+                self._compiled = torch.compile(
+                    self._model, mode="max-autotune-no-cudagraphs", dynamic=False
+                )
             self._fixed_units = max(1, fixed_units)
         except Exception as exc:
             self._drop_compiled(exc)
@@ -233,8 +255,7 @@ class UpscaleEngine:
                 if self._compiled_warm:
                     y = self._call_fn(self._compiled, x)
                 else:  # the first call compiles; keep Inductor's autotune report off the screen
-                    with contextlib.redirect_stderr(io.StringIO()), warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
+                    with _quiet_compiler():
                         y = self._call_fn(self._compiled, x)
                     self._compiled_warm = True
             except Exception as exc:

@@ -68,10 +68,16 @@ def test_precision_on_amd():
     assert dtype is torch.float32 and notes  # RDNA 2 has no bf16 hardware
 
 
-def test_compile_stays_opt_in_on_amd():
-    assert not should_compile(CompileMode.auto, "cuda", (12, 0), 50_000, vendor="amd")
+def test_compile_auto_on_amd_only_where_measured():
+    def auto(arch: str, frames: int = 50_000) -> bool:
+        cap = (int(arch[3:5]), 0)
+        return should_compile(CompileMode.auto, "cuda", cap, frames, vendor="amd", arch=arch)
+
+    assert auto("gfx1200")  # RX 9060 XT: +32% measured
+    assert not auto("gfx1200", frames=300)  # too short to pay back the compile time
+    assert not auto("gfx1100") and not auto("gfx1030")  # RDNA 3 / 2: not measured
+    assert should_compile(CompileMode.on, "cuda", (10, 3), 10, vendor="amd", arch="gfx1030")
     assert should_compile(CompileMode.auto, "cuda", (12, 0), 50_000, vendor="nvidia")
-    assert should_compile(CompileMode.on, "cuda", (12, 0), 10, vendor="amd")
 
 
 # ------------------------------------------------------------------ encoders
@@ -181,7 +187,7 @@ def test_runtime_config_for_rx_9060_xt():
     )
     assert cfg.device.type == "cuda" and cfg.dtype is torch.float16  # ROCm uses "cuda"
     assert cfg.calibrated and cfg.batch_size > 1  # "HIP out of memory" is recognised
-    assert cfg.video_codec == "h264_vaapi" and not cfg.compile_model
+    assert cfg.video_codec == "h264_vaapi" and cfg.compile_model  # RDNA 4, long job
     assert (cfg.gpu_vendor, cfg.gpu_label) == ("amd", "gfx1200")
 
 
